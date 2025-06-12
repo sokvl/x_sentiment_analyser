@@ -1,0 +1,22 @@
+{
+    "cnn_lstm": {
+      "model_name": "cnn_lstm_model",
+      "model_lib": "pytorch",
+      "params": {
+        "weights_path": "/path/to/cnn_lstm_weights.pt",
+        "vocab_size": 63175,
+        "embedding_dim": 256,
+        "lstm_hidden_dim": 256,
+        "num_classes": 3,
+        "ticker_vocab_size": 5,
+        "dropout": 0.8
+      }
+    },
+    "transformer_finbert": {
+      "model_name": "transformer_model",
+      "model_lib": "transformers",
+      "params": {
+        "weights_path": "yiyanghkust/finbert-tone"
+      }
+    }
+  }
