@@ -21,13 +21,4 @@ An application that automatically analyzes real-time sentiment from X.com using 
 ### Prediction Report
 ![Prediction Report](photos/screenshot3.png)
 
-## Getting Started
 
-1. Clone the repository.
-2. Install the required dependencies.
-3. Configure the application settings.
-4. Run the application.
-
-## License
-
-This project is licensed under the MIT License.
