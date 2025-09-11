@@ -12,6 +12,11 @@ The main goal of the system is to **identify and forecast market sentiment**, he
 - **Chart Visualization** – interactive charts for prices and sentiment data.  
 - **Data Collection Management** – manage and configure data collection processes.  
 
+## Tech Stack  
+- **Backend**: Django, Redis, PostgreSQL  
+- **AI/ML**: PyTorch, NLTK, Hugging Face Transformers  
+- **Frontend**: Next.js  
+
 ## Screenshots  
 
 ### Signal Forecast and Scraper Status  
