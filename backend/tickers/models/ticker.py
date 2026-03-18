@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 from django.db import models
-
 
 class Ticker(models.Model):
     ticker_id = models.AutoField(primary_key=True)

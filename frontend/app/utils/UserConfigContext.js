@@ -22,6 +22,8 @@ export const UserConfigProvider = ({ children }) => {
     const [state, dispatch] = useReducer(userConfigReducer, {
         config_name: '',
         tickers: [],
+        config_id: 1,
+        used_model: 'LSTMCNNv1',
         isLoaded: false,
         loading: false,
         error: null,
@@ -35,16 +37,18 @@ export const UserConfigProvider = ({ children }) => {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
             const data = await response.json();
-
+            console.log(data)
             if (data.length > 0) {
                 const activeConfig = data[0];
-                const { name, config_string } = activeConfig;
+                const { name, config_string, config_id } = activeConfig;
 
                 dispatch({
                     type: 'SET_CONFIG',
                     payload: {
                         config_name: name,
                         tickers: config_string?.user_config?.tickers || [],
+                        config_id: config_id || 1,
+                        used_model: config_string?.user_config?.model || 'LSTMCNNv1',
                     },
                 });
             } else {

@@ -6,16 +6,15 @@ import SignalForecastTile from '../components/signals/SignalForecastTile';
 import { useUserConfig } from '../utils/UserConfigContext';
 
 export default function SetupPage() {
-    const { state: userConfig } = useUserConfig(); // Pobranie konfiguracji użytkownika
-    const [availableTickers, setAvailableTickers] = useState([]); // Lista wszystkich tickerów
-    const [observedTickers, setObservedTickers] = useState([]); // Obserwowane tickery dla signal generation
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // Domyślna data
-    const [signalProps, setSignalProps] = useState(null); // Propsy dla SignalForecastTile
-    const [loading, setLoading] = useState(false); // Ładowanie dla start scrapera
+    const { state: userConfig } = useUserConfig();
+    const [availableTickers, setAvailableTickers] = useState([]);
+    const [observedTickers, setObservedTickers] = useState([]);
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [signalProps, setSignalProps] = useState(null);
+    const [loading, setLoading] = useState(false);
     const [alert, setAlert] = useState(null);
     const [error, setError] = useState(null);
 
-    // Funkcja do uruchamiania scrapera
     const startScraper = async () => {
         setLoading(true);
         setAlert(null);
@@ -23,9 +22,7 @@ export default function SetupPage() {
             const response = await fetch('http://localhost:8000/api/scraper/start/', {
                 method: 'POST',
             });
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
             const data = await response.json();
             setAlert({ type: 'success', message: data.message || 'Scraper started successfully!' });
         } catch (err) {
@@ -35,39 +32,42 @@ export default function SetupPage() {
         }
     };
 
-    // Funkcja do pobierania listy tickerów
     const fetchTickers = async () => {
         try {
             const response = await fetch('http://localhost:8000/api/tickers/tickers/');
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
             const data = await response.json();
-            setAvailableTickers(data);
+            // Ensure we always store an array
+            setAvailableTickers(Array.isArray(data) ? data : data?.results ?? []);
         } catch (err) {
             setError(`Error fetching tickers: ${err.message}`);
+            setAvailableTickers([]);
         }
     };
 
-    // Pobranie tickerów przy załadowaniu komponentu
     useEffect(() => {
         fetchTickers();
     }, []);
 
-    // Ustawienie domyślnych obserwowanych tickerów z konfiguracji użytkownika
     useEffect(() => {
-        if (userConfig.tickers?.length > 0) {
-            const initialObservedTickers = userConfig.tickers.map((ticker) => ({
+        const configTickers = Array.isArray(userConfig?.tickers) ? userConfig.tickers : [];
+        const safeTickers = Array.isArray(availableTickers) ? availableTickers : [];
+
+        if (configTickers.length > 0) {
+            const initialObservedTickers = configTickers.map((ticker) => ({
                 symbol: `$${ticker}`,
-                full_name: availableTickers.find((t) => t.symbol.replace(/^\$/, '') === ticker)?.full_name || '',
+                full_name: safeTickers.find(
+                    (t) => t.symbol?.replace(/^\$/, '') === ticker
+                )?.full_name || '',
             }));
             setObservedTickers(initialObservedTickers);
         }
     }, [userConfig, availableTickers]);
 
-    // Obsługa formularza generowania sygnału
     const handleGenerateSignals = () => {
-        const tickersWithoutDollar = observedTickers.map((ticker) => ticker.symbol.replace(/^\$/, '')); // Usuń $
+        const tickersWithoutDollar = Array.isArray(observedTickers)
+            ? observedTickers.map((ticker) => ticker.symbol.replace(/^\$/, ''))
+            : [];
         setSignalProps({ date: selectedDate, tickers: tickersWithoutDollar });
     };
 
@@ -76,16 +76,15 @@ export default function SetupPage() {
             <h1 className="text-3xl font-bold mb-6">Setup</h1>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Scraper Status Tile */}
                 <div className="max-w-full w-full">
                     <div className="p-4 bg-gray-800 rounded-lg shadow-lg h-full">
-                    <ScraperStatusTile
+                        <ScraperStatusTile
                             status="IDLE"
                             website="x.com"
                             ticker="$TSLA"
                             tweetCount={100}
-                            showStartButton={true} // Wyświetlanie przycisku
-                    />
+                            showStartButton={true}
+                        />
                         {alert && (
                             <div
                                 className={`mt-4 p-4 rounded-md text-sm ${
@@ -101,13 +100,12 @@ export default function SetupPage() {
                 </div>
             </div>
 
-            {/* Formularz wyboru daty i generowanie sygnału */}
-                        {/* Signal Forecast Tile */}
-                        {signalProps && (
+            {signalProps && (
                 <div className="mt-6">
                     <SignalForecastTile date={signalProps.date} tickers={signalProps.tickers} />
                 </div>
             )}
+
             <div className="mt-6 p-4 bg-gray-800 rounded-lg shadow-lg">
                 <h2 className="p-3 text-xl font-semibold text-gray-200">Generate Signals</h2>
 
@@ -124,7 +122,6 @@ export default function SetupPage() {
                     />
                 </div>
 
-                {/* Obserwowane tickery z konfiguracji */}
                 <div className="mb-4">
                     <TickersTile
                         availableTickers={availableTickers}
@@ -140,8 +137,6 @@ export default function SetupPage() {
                     Generate Signals
                 </button>
             </div>
-
-
         </main>
     );
 }

@@ -1,31 +1,35 @@
-from __future__ import annotations
-
-from django.urls import include
-from django.urls import path
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-
-from .views import ConfigView
-from .views import EvalView
-from .views import PostViewSet
-from .views import PredictionsByDayView
-from .views import ScraperControlView
-from .views import SourceViewSet
+from .views import (
+    ConfigViewSet,
+    EvalView,
+    PostViewSet,
+    PredictionsByDayView,
+    SourceViewSet,
+    ScraperControlView,
+    ScraperLogsView,
+    ScraperConfigView,
+)
 
 router = DefaultRouter()
-router.register(r'sources', SourceViewSet)
-router.register(r'posts', PostViewSet)
+router.register(r"sources", SourceViewSet, basename="sources")
+router.register(r"posts", PostViewSet, basename="posts")
+router.register(r"config", ConfigViewSet, basename="config")
 
 urlpatterns = [
-    path(
-        'scraper/<str:operation>/',
-        ScraperControlView.as_view(), name='scraper-control',
-    ),
-    path(
-        'predictions-by-day/', PredictionsByDayView.as_view(),
-        name='predictions-by-day',
-    ),
-    path('eval/', EvalView.as_view(), name='eval'),
-    path('', include(router.urls)),
-    path('config/', ConfigView.as_view(), name='config-list'),
-    path('config/<int:pk>/', ConfigView.as_view(), name='config-detail'),
+    # Legacy Scraper control endpoints
+    path("scraper/start/", ScraperControlView.as_view(), {'action': 'start'}, name="scraper-start"),
+    path("scraper/pause/", ScraperControlView.as_view(), {'action': 'pause'}, name="scraper-pause"),
+    path("scraper/resume/", ScraperControlView.as_view(), {'action': 'resume'}, name="scraper-resume"),
+    path("scraper/stop/", ScraperControlView.as_view(), {'action': 'stop'}, name="scraper-stop"),
+    path("scraper/restart/", ScraperControlView.as_view(), {'action': 'restart'}, name="scraper-restart"),
+    path("scraper/logs/", ScraperLogsView.as_view(), name="scraper-logs"),
+    path("scraper/config/", ScraperConfigView.as_view(), name="scraper-config"),
+
+    # NLP / prediction endpoints
+    path("eval/", EvalView.as_view(), name="eval"),
+    path("predictions-by-day/", PredictionsByDayView.as_view(), name="predictions-by-day"),
+
+    # ViewSets
+    path("", include(router.urls)),
 ]

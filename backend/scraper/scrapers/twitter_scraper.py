@@ -26,23 +26,21 @@ from ..scraper import ScraperStates
 ### INTERNAL IMPORTS ###
 
 load_dotenv()
-username = os.getenv('twitter_username')
-password = os.getenv('twitter_password')
-email = os.getenv('twitter_email')
 
 
 class TwitterScraper(Scraper):
     def __init__(self):
+        # Credentials loaded here so .env changes are picked up on restart
+        self.data_manager = apps.get_app_config('scraper').DATA_MANAGER
         today = datetime.now().strftime('%Y-%m-%d')
         yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-
         scraper_config = {
             'crawl_interval': 60,
             'source': [{'name': 'twitter', 'base_url': 'https://x.com/search?q='}],
             'credentials': {
-                'email': email,
-                'login': username,
-                'password': password,
+                'email': os.getenv('twitter_email'),
+                'login': os.getenv('twitter_username'),
+                'password': os.getenv('twitter_password'),
             },
             'max_time_running': None,
             'threads': 1,
@@ -57,7 +55,6 @@ class TwitterScraper(Scraper):
                 },
             },
         }
-        self.data_manager = apps.get_app_config('scraper').DATA_MANAGER
         super().__init__(scraper_config)
 
     def load_config(self) -> None:
@@ -91,9 +88,7 @@ class TwitterScraper(Scraper):
                 },
             }
         except ObjectDoesNotExist:
-            raise ValueError(
-                f"Config with ID {self.config['config_id']} not found.",
-            )
+            raise ValueError("No active Config found in the database.")
         except Exception as e:
             raise ValueError(f"Error loading configuration: {e}")
 
@@ -152,20 +147,17 @@ class TwitterScraper(Scraper):
         password_input.send_keys(Keys.RETURN)
 
     def _generate_twitter_query(self, ticker: str, start_date: str | None = None, end_date: str | None = None) -> list[str]:
-        if start_date and end_date:
-            pass
-        else:
-            try:
-                qp = self.config['twitter_query']['params']
-                filters = ' '.join(
-                    [f"-filter:{filter}" for filter in qp['filter']],
-                )
-                query = ticker
-                query += f" lang:{qp['lang']} since:{self.config['twitter_query']['start_date']} until:{self.config['twitter_query']['end_date']} {filters}"
-                query = ''.join(query)
-            except Exception as e:
-                self._log(LogTypes.ERROR, f'69 {e}')
+        try:
+            qp = self.config['twitter_query']['params']
+            filters = ' '.join(
+                [f"-filter:{f}" for f in qp['filter']],
+            )
+            query = ticker
+            query += f" lang:{qp['lang']} since:{self.config['twitter_query']['start_date']} until:{self.config['twitter_query']['end_date']} {filters}"
             return [query]
+        except Exception as e:
+            self._log(LogTypes.ERROR, f'Failed to generate query for {ticker}: {e}')
+            return []
 
     def _login_twitter(self) -> None:
         try:
@@ -236,9 +228,6 @@ class TwitterScraper(Scraper):
 
         return {'likes': likes, 'retweets': retweets, 'replies': replies, 'views': views}
 
-    def _process_and_store(self, tweet_object):
-        self.data_manager.eval_sentiment(tweet_object)
-        pass
 
     def run_procedure(self, crawling_mode=True):
         # print("1 conf", self.config)
@@ -281,7 +270,11 @@ class TwitterScraper(Scraper):
                         if last_task:
                             self._update_task(last_task, overwrite=True)
                     count = 0
-                    query = self._generate_twitter_query(ticker=ticker)[0]
+                    queries = self._generate_twitter_query(ticker=ticker)
+                    if not queries:
+                        self._log(LogTypes.ERROR, f'No query generated for {ticker}, skipping.')
+                        continue
+                    query = queries[0]
                     url = self.config['source'][0]['base_url'] + \
                         quote_plus(query)
                     self.instance.get(url)
@@ -334,9 +327,7 @@ class TwitterScraper(Scraper):
                                 ) else None
 
                                 if not text or not date:
-                                    print(
-                                        '[WARNING] Skipping tweet due to missing text or date.',
-                                    )
+                                    self._log(LogTypes.WARNING, 'Skipping tweet due to missing text or date.')
                                     continue
 
                                 tweet_data = self._extract_tweet_metadata(
@@ -347,10 +338,9 @@ class TwitterScraper(Scraper):
                                 tweet_data['date'] = datetime.fromisoformat(
                                     date[:-1],
                                 ).date()
-                                tweet_data['likes'] = tweet_data['likes']
-                                tweet_data['shares'] = tweet_data['retweets']
-                                tweet_data['views'] = tweet_data['views']
-                                tweet_data['comments'] = tweet_data['replies']
+                                # Rename scraper field names to match data pipeline keys
+                                tweet_data['shares'] = tweet_data.pop('retweets', None)
+                                tweet_data['comments'] = tweet_data.pop('replies', None)
                                 tweet_data['text'] = text
                                 tweet_data['source_name'] = self.config['source'][0]['name']
 
@@ -358,13 +348,11 @@ class TwitterScraper(Scraper):
                                 count += 1
                                 self._update_task({'count': count})
                             except KeyError as e:
-                                print(
-                                    f"[ERROR] Missing key while processing tweet: {e}",
-                                )
+                                self._log(LogTypes.ERROR, f'Missing key while processing tweet: {e}')
                             except ValueError as e:
-                                print(f"[ERROR] Value error encountered: {e}")
+                                self._log(LogTypes.ERROR, f'Value error processing tweet: {e}')
                             except Exception as e:
-                                print(f"[ERROR] Unexpected error: {e}")
+                                self._log(LogTypes.ERROR, f'Unexpected error processing tweet: {e}')
 
                     self._log(
                         LogTypes.MESSAGE,

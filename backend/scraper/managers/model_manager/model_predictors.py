@@ -59,20 +59,27 @@ class TransformerModelPredictor(BaseModelPredictor):
         try:
             with torch.no_grad():
                 # Move tokenizer output to target device
-                if isinstance(x_text, dict):
-                    x_text = {k: v.to(device) for k, v in x_text.items()}
+                # x_text might be a BatchEncoding (which behaves like a dict) or a Tensor
+                if hasattr(x_text, 'items'):
+                    # Use a new dict to avoid modifying the input in place if it's a BatchEncoding
+                    x_text_moved = {}
+                    for k, v in x_text.items():
+                        if isinstance(v, torch.Tensor):
+                            x_text_moved[k] = v.to(device)
+                        else:
+                            x_text_moved[k] = v
+                    x_text = x_text_moved
+                elif isinstance(x_text, torch.Tensor):
+                    x_text = x_text.to(device)
                 elif isinstance(x_text, list):
                     x_text = torch.tensor(x_text, dtype=torch.long).to(device)
-                else:
-                    x_text = x_text.to(device)
 
-                output = model(**x_text) if isinstance(
-                    x_text,
-                    dict,
-                ) else model(x_text)
-                logits = output.logits if hasattr(
-                    output, 'logits',
-                ) else output[0]
+                if isinstance(x_text, dict):
+                    output = model(**x_text)
+                else:
+                    output = model(x_text)
+
+                logits = output.logits if hasattr(output, 'logits') else output[0]
                 probabilities = torch.nn.functional.softmax(
                     logits, dim=1,
                 ).cpu()
@@ -84,7 +91,7 @@ class TransformerModelPredictor(BaseModelPredictor):
                 if probabilities.size(0) == 1 else probabilities.tolist(),
             }
         except Exception as e:
-            logger.exception('Błąd podczas predykcji modelu transformer')
+            logger.exception('Error during transformer model prediction')
             raise RuntimeError(
                 f"Prediction failed for transformer model: {e}",
             ) from e

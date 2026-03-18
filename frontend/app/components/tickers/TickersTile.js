@@ -3,40 +3,46 @@ import React, { useState, useEffect } from 'react';
 import Tile from '../common/Tile';
 
 export default function TickersTile({
-  configId=4,
-  availableTickers = [],
-  observedTickersProp = [],
+  configId = 4,
+  availableTickers,
+  observedTickersProp,
   onObservedTickersChange,
 }) {
-  const [observedTickers, setObservedTickers] = useState([]);
+  const safeTickers = Array.isArray(availableTickers) ? availableTickers : [];
+  const safeObserved = Array.isArray(observedTickersProp) ? observedTickersProp : [];
+
+  const [observedTickers, setObservedTickers] = useState(safeObserved);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredTickers, setFilteredTickers] = useState(availableTickers);
+  const [filteredTickers, setFilteredTickers] = useState([]);
 
   useEffect(() => {
-    if (observedTickersProp.length > 0) {
-      setObservedTickers(observedTickersProp);
+    if (safeObserved.length > 0) {
+      setObservedTickers(safeObserved);
     }
   }, [observedTickersProp]);
+
+  useEffect(() => {
+    const unobserved = safeTickers.filter(
+      (ticker) => !observedTickers.some((observed) => observed.symbol === ticker.symbol)
+    );
+    setFilteredTickers(unobserved);
+  }, [availableTickers, observedTickers]);
 
   const patchTickersToBackend = async (updatedTickers) => {
     try {
       const patchBody = {
         config_string: {
           user_config: {
-
             tickers: updatedTickers.map((t) => t.symbol),
           },
         },
       };
-
       const response = await fetch(`http://localhost:8000/api/config/${configId}/`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patchBody),
       });
-      if (!response.ok) {
-        throw new Error('Patch request failed');
-      }
+      if (!response.ok) throw new Error('Patch request failed');
       const data = await response.json();
       console.log('Patch request succeeded:', data);
     } catch (error) {
@@ -44,46 +50,35 @@ export default function TickersTile({
     }
   };
 
-  // Aktualizacja obserwowanych tickerów → dodanie
   const addObservedTicker = (ticker) => {
-    if (!observedTickers.find((t) => t.symbol === ticker.symbol)) {
-      const updatedTickers = [...observedTickers, ticker];
+    const current = Array.isArray(observedTickers) ? observedTickers : [];
+    if (!current.find((t) => t.symbol === ticker.symbol)) {
+      const updatedTickers = [...current, ticker];
       setObservedTickers(updatedTickers);
-      onObservedTickersChange(updatedTickers);
-      // Możesz też automatycznie patchować do backendu już przy dodawaniu
+      onObservedTickersChange?.(updatedTickers);
       patchTickersToBackend(updatedTickers);
     }
   };
 
-  // Aktualizacja obserwowanych tickerów → usunięcie
   const removeObservedTicker = (ticker) => {
-    const updatedTickers = observedTickers.filter((t) => t.symbol !== ticker.symbol);
+    const current = Array.isArray(observedTickers) ? observedTickers : [];
+    const updatedTickers = current.filter((t) => t.symbol !== ticker.symbol);
     setObservedTickers(updatedTickers);
-    onObservedTickersChange(updatedTickers);
-    // PATCH do backendu, żeby od razu odzwierciedlić zmianę
+    onObservedTickersChange?.(updatedTickers);
     patchTickersToBackend(updatedTickers);
   };
 
-  // Funkcja obsługi wyszukiwania
   const handleSearch = (query) => {
     setSearchQuery(query);
-    const unobservedTickers = availableTickers.filter(
+    const unobserved = safeTickers.filter(
       (ticker) => !observedTickers.some((observed) => observed.symbol === ticker.symbol)
     );
     setFilteredTickers(
-      unobservedTickers.filter((ticker) =>
+      unobserved.filter((ticker) =>
         ticker.symbol.toLowerCase().includes(query.toLowerCase())
       )
     );
   };
-
-  // Reset listy filtrowanej przy aktualizacji `availableTickers` albo `observedTickers`
-  useEffect(() => {
-    const unobservedTickers = availableTickers.filter(
-      (ticker) => !observedTickers.some((observed) => observed.symbol === ticker.symbol)
-    );
-    setFilteredTickers(unobservedTickers);
-  }, [availableTickers, observedTickers]);
 
   return (
     <Tile>
@@ -91,7 +86,6 @@ export default function TickersTile({
         Observed Tickers
       </h2>
 
-      {/* Sekcja Observed Tickers */}
       <div className="mb-4">
         <div className="flex flex-wrap gap-2 mt-2">
           {observedTickers.map((ticker) => (
@@ -114,7 +108,6 @@ export default function TickersTile({
         </div>
       </div>
 
-      {/* Wyszukiwanie */}
       <input
         type="text"
         placeholder="Select from supported tickers..."
@@ -123,7 +116,6 @@ export default function TickersTile({
         className="w-full px-4 py-2 mb-4 rounded-md bg-gray-800 text-gray-200 border border-gray-600 focus:outline-none focus:border-blue-500"
       />
 
-      {/* Lista "nieobserwowanych" tickerów do wyboru */}
       <div className="max-h-60 overflow-auto border border-gray-700 rounded-md">
         {filteredTickers.length > 0 ? (
           filteredTickers.map((ticker) => (
@@ -136,9 +128,7 @@ export default function TickersTile({
             </div>
           ))
         ) : (
-          <p className="text-gray-400 text-center p-2">
-            No available tickers
-          </p>
+          <p className="text-gray-400 text-center p-2">No available tickers</p>
         )}
       </div>
     </Tile>

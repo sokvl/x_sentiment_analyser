@@ -13,12 +13,6 @@ from .model_loaders import get_model_loader
 from .model_predictors import get_model_predictor
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-formatter = logging.Formatter('[%(levelname)s] %(message)s')
-handler.setFormatter(formatter)
-if not logger.handlers:
-    logger.addHandler(handler)
 
 
 class ModelManager:
@@ -49,7 +43,7 @@ class ModelManager:
             model_params = self.model_params
 
         self.model = self.loader.load_model(
-            model_params,
+            model_params
         )
         return self
 
@@ -66,9 +60,9 @@ class ModelManager:
             torch.save(
                 {'model_state_dict': self.model.state_dict()}, save_path,
             )
-            logger.info(f"Weights saved in: {save_path}.")
+            logger.info("Weights saved in: %s", save_path)
         except Exception as e:
-            logger.error(f"Can't save model: {e}")
+            logger.error("Can't save model: %s", e)
             raise
 
     def predict(
@@ -119,9 +113,9 @@ class ModelManager:
         try:
             self.device = device
             self.model.to(self.device)
-            logger.info(f"Model moved to: {self.device}")
+            logger.info("Model moved to: %s", self.device)
         except Exception as e:
-            logger.error(f"Moving model to {device} failed: {e}")
+            logger.error("Moving model to %s failed: %s", device, e)
             raise
 
     @staticmethod
@@ -130,15 +124,15 @@ class ModelManager:
         try:
             with path.open('r', encoding='utf-8') as file:
                 params = json.load(file)
-            logger.info(f"Parameters loaded from {path}")
+            logger.info("Parameters loaded from %s", path)
         except FileNotFoundError:
-            logger.error(f"File not found: {path}")
+            logger.error("File not found: %s", path)
             raise ValueError(f"File not found: {path}")
         except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error in file {path}: {e}")
+            logger.error("JSON decode error in file %s: %s", path, e)
             raise ValueError(f"JSON decode error in {path}: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error loading parameters: {e}")
+            logger.error("Unexpected error loading parameters: %s", e)
             raise ValueError(
                 f"Unexpected error loading parameters from {path}: {e}",
             )
@@ -146,5 +140,5 @@ class ModelManager:
         logger.info('Parameters successfully verified.')
         return params
 
-    def get_modelname(self):
+    def get_model_name(self):
         return self.model_name

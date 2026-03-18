@@ -11,11 +11,12 @@ export default function ProcessedTickerDataTile({ styles }) {
 
     const processTickerData = (data) => {
         return Object.entries(data)
-            .filter(([ticker, value]) => Array.isArray(value) && value.length > 0) // Filtruj poprawne dane (z co najmniej jednym wpisem)
+            .filter(([ticker, value]) => Array.isArray(value) && value.length > 0)
             .map(([ticker, records]) => {
-                const latestRecord = records[records.length - 1]; // Najnowsza data
-                const openPrice = latestRecord[`Open ${ticker.replace('$', '')}`];
-                const closePrice = latestRecord[`Close ${ticker.replace('$', '')}`];
+                const latestRecord = records[records.length - 1];
+
+                const openPrice = latestRecord.Open;
+                const closePrice = latestRecord.Close;
 
                 if (!openPrice || !closePrice) return null;
 
@@ -50,8 +51,10 @@ export default function ProcessedTickerDataTile({ styles }) {
             }
 
             const data = await response.json();
+            console.log("weee", data)
             const processedData = processTickerData(data);
             setTickerData(processedData);
+            console.log("weee2", processedData)
         } catch (err) {
             setError(`Error fetching data: ${err.message}`);
         } finally {
@@ -97,13 +100,12 @@ export default function ProcessedTickerDataTile({ styles }) {
                                     <td className="p-2 text-gray-300">{row.date}</td>
                                     <td className="p-2 text-gray-300">${row.close.toFixed(2)}</td>
                                     <td
-                                        className={`p-2 font-semibold ${
-                                            row.change > 0
-                                                ? 'text-green-400'
-                                                : row.change < 0
+                                        className={`p-2 font-semibold ${row.change > 0
+                                            ? 'text-green-400'
+                                            : row.change < 0
                                                 ? 'text-red-400'
                                                 : 'text-yellow-400'
-                                        }`}
+                                            }`}
                                     >
                                         {row.change > 0 ? '⯅ ' : '⯆ '}
                                         {Math.abs(row.change.toFixed(2))}%

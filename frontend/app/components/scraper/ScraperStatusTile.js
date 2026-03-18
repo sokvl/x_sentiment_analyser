@@ -49,6 +49,7 @@ export default function ScraperStatusTile({ status, website, ticker, tweetCount,
                 },
                 body: new URLSearchParams({
                     source: 'twitter',
+                    id: task.id || '2',
                 }).toString(),
             });
 

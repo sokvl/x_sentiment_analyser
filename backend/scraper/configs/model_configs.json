@@ -11,7 +11,7 @@
         "ticker_vocab_size": 5,
         "dropout": 0.8
       }
-    },
+    },    
     "transformer_finbert": {
       "model_name": "transformer_model",
       "model_lib": "transformers",

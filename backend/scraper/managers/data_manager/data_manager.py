@@ -5,18 +5,18 @@ import logging
 
 from django.apps import apps
 from django.conf import settings
-from transformers import AutoTokenizer
+from django.db import DatabaseError, transaction
+from transformers import BertTokenizer
 
 from .model_processors import get_preprocessor
 
-# from types import Dict
 
 
 class DataManager:
     def __init__(self, model_bundle: dict):
         self.model_type = model_bundle['model_type']
         self.model_params = model_bundle['model_params']
-        if model_bundle['model_type'] == 'lstmcnn_model':
+        if self.model_type == 'lstmcnn_model':
             # TO DO LATER WE HAVE TO ADD FULL SUPPORT
             self.word_to_index = self._load_json(settings.WORD_TO_INDEX_PATH)
             self.max_len = 30
@@ -32,7 +32,7 @@ class DataManager:
                 settings.TICKER_TO_INDEX_PATH,
             )
         elif self.model_type == 'transformer_model':
-            tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer = BertTokenizer.from_pretrained(
                 self.model_params['weights_path'],
             )
             self.preprocessor = get_preprocessor(
@@ -84,11 +84,7 @@ class DataManager:
             }
 
         tweet_data = {
-            'text': tweet,
-            'ticker': ticker,
-            'processed_text': tweet,
-            'source': tweet_object.get('source_name', ''),
-            'date': tweet_object.get('date', ''),
+            **tweet_object,
             'prediction': prediction.get('predicted_sentiment'),
             'predicted_probabilities': prediction.get('predicted_probabilities'),
         }
@@ -106,34 +102,35 @@ class DataManager:
         Source = apps.get_model('scraper', 'Source')
         PostPrediction = apps.get_model('scraper', 'PostPrediction')
         try:
-            ticker, _ = Ticker.objects.get_or_create(symbol=data['ticker'])
-            content, _ = Content.objects.get_or_create(text=data['text'])
-            source, _ = Source.objects.get_or_create(name=data['source'])
-            post_meta, _ = PostMeta.objects.get_or_create(
-                source=source,
-                likes=data.get('likes'),
-                shares=data.get('retweets'),
-                views=data.get('views'),
-                comments=data.get('replies'),
-            )
-            post_prediction, _ = PostPrediction.objects.get_or_create(
-                prediction=data['prediction'],
-                probabilities=data['predicted_probabilities'],
-                model_name=self.model_manager.get_modelname(),
-            )
-            post, created = Post.objects.get_or_create(
-                time_stamp=data['date'],
-                related_ticker=ticker,
-                related_content=content,
-                post_metadata=post_meta,
-                post_prediction=post_prediction,
-            )
+            with transaction.atomic():
+                ticker, _ = Ticker.objects.get_or_create(symbol=data['ticker'])
+                content, _ = Content.objects.get_or_create(text=data['text'])
+                source, _ = Source.objects.get_or_create(name=data['source'])
+                post_meta, _ = PostMeta.objects.get_or_create(
+                    source=source,
+                    likes=data.get('likes'),
+                    shares=data.get('retweets'),
+                    views=data.get('views'),
+                    comments=data.get('replies'),
+                )
+                post_prediction, _ = PostPrediction.objects.get_or_create(
+                    prediction=data['prediction'],
+                    probabilities=data['predicted_probabilities'],
+                    model_name=self.model_manager.get_model_name(),
+                )
+                post, created = Post.objects.get_or_create(
+                    time_stamp=data['date'],
+                    related_ticker=ticker,
+                    related_content=content,
+                    post_metadata=post_meta,
+                    post_prediction=post_prediction,
+                )
             if created:
                 self.logger.info('New post saved: %s', post)
             else:
-                self.logger.debug(
-                    'Post already exists: %s',
-                    post,
-                )
+                self.logger.debug('Post already exists: %s', post)
+        except DatabaseError:
+            self.logger.exception('Database error occurred while saving data')
         except Exception:
-            self.logger.exception('Failed to save data')
+            self.logger.exception('Unexpected error while saving data')
+            raise

@@ -3,21 +3,17 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from typing import Dict
-from typing import Optional
-from typing import Union
 
 import torch
 import torch.nn as nn
-from transformers import AutoModelForSequenceClassification
-
+from transformers import BertForSequenceClassification
 from .base_loader import BaseModelLoader
 
 
 class LSTMCNNLoader(BaseModelLoader):
     def load_model(self, model_params: dict[str, Any]) -> nn.Module:
         """Initialise CNN-LSTM architecture and load weights."""
-        from models.lstm_cnn import CNNLSTMModel  # snake_case import
+        from ml_logic.lstm_cnn import CNNLSTMModel
 
         try:
             model = CNNLSTMModel(
@@ -50,7 +46,7 @@ class TransformerModelLoader(BaseModelLoader):
     def load_model(self, model_params: dict[str, Any]) -> nn.Module:
         """Load a HuggingFace transformer model for sequence classification."""
         try:
-            model = AutoModelForSequenceClassification.from_pretrained(
+            model = BertForSequenceClassification.from_pretrained(
                 model_params['weights_path'],
             )
             model.to(self.device)

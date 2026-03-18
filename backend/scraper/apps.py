@@ -81,3 +81,6 @@ class ScraperConfig(AppConfig):
             logger.exception('Failed to initialize SCRAPER_MANAGER')
 
         logger.debug('ScraperConfig.ready() completed.')
+
+        # Register signal handlers (e.g. Config cache invalidation)
+        import scraper.signals  # noqa: F401

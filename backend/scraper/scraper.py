@@ -53,7 +53,7 @@ class Scraper(ABC):
 
     def update_config(self, config):
         self.config = config
-        self._log(LogTypes.MESSAGE, f"Config updated.")
+        self._log(LogTypes.MESSAGE, "Config updated.")
 
     def _log(self, log_type, message):
         time_stamp = datetime.datetime.now()
@@ -61,7 +61,7 @@ class Scraper(ABC):
 
     def _set_status(self, new_state):
         self.state = new_state
-        self._log(LogTypes.MESSAGE, f"State changed: {new_state}")
+        self._log(LogTypes.MESSAGE, "State changed: %s" % new_state)
 
     def _update_task(self, new_task, overwrite=False):
         """
@@ -72,7 +72,7 @@ class Scraper(ABC):
         - overwrite: If True, replaces the entire task. If False, updates only the specified keys.
         """
         if overwrite:
-            self._log(LogTypes.MESSAGE, f"Task Overwritten: {new_task}")
+            self._log(LogTypes.MESSAGE, "Task Overwritten: %s" % new_task)
             self.current_task = new_task
         else:
             if not isinstance(self.current_task, dict):
@@ -81,7 +81,7 @@ class Scraper(ABC):
 
     def get_state(self) -> dict:
         return {
-            'state': ScraperStates(self.state).name,
+            'state': self.state.name,
             'logs': self.logs,
             'current_task_details': self.current_task,
         }

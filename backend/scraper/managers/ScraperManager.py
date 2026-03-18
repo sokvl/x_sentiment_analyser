@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from threading import active_count
+from threading import Lock
 from threading import Thread
 
 from scraper.scrapers.twitter_scraper import TwitterScraper
@@ -12,14 +13,11 @@ class ScraperManager:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.scrapers = {}
+        self.lock = Lock()
         # Maksymalna liczba wątków zgodnie z liczbą dostępnych rdzeni procesora
-        self.max_threads = os.cpu_count()
+        self.max_threads = os.cpu_count() or 4
 
-    def _set_scraper_wrapper(self, instance, source):
-        try:
-            instance.run_procedure()
-        except Exception as e:
-            self.logger.exception('Error in scraper for source %s', e)
+
 
     def get_scraper(self, source):
         """
@@ -33,55 +31,60 @@ class ScraperManager:
         starts it in a separate thread.
         If a scraper for the source already exists, it will not create a new one.
         """
-        if source in self.scrapers:
-            self.logger.warning(
-                'Scraper for source %s already exists.', source,
+        with self.lock:
+            if source in self.scrapers:
+                self.logger.warning(
+                    'Scraper for source %s already exists.', source,
+                )
+                return
+
+            current_threads = active_count()
+
+            if current_threads >= self.max_threads:
+                self.logger.error(
+                    'Cannot start new scraper. Maximum thread limit of %s reached.',
+                    self.max_threads,
+                )
+                return
+
+            scraper_instance = TwitterScraper()
+            self.scrapers[source] = {'scraper': scraper_instance, 'thread': None}
+
+            thread = Thread(
+                target=scraper_instance.run_procedure,
+                name=f"{source}_scraper_thread", daemon=True,
             )
-            return
-
-        current_threads = active_count()
-
-        if current_threads >= self.max_threads:
-            self.logger.error(
-                'Cannot start new scraper. Maximum thread limit of %s reached.',
-                self.max_threads,
-            )
-            return
-
-        scraper_instance = TwitterScraper()
-        self.scrapers[source] = {'scraper': scraper_instance, 'thread': None}
-
-        thread = Thread(
-            target=scraper_instance.run_procedure,
-            name=f"{source}_scraper_thread", daemon=True,
-        )
-        thread.start()
-        self.scrapers[source]['thread'] = thread
+            thread.start()
+            self.scrapers[source]['thread'] = thread
 
     def stop_scraper(self, source):
         """
         Stops the scraper (if running) for the specified source and removes it from the manager.
         """
-        if source in self.scrapers:
-            scraper_data = self.scrapers[source]
-            scraper_instance = scraper_data['scraper']
+        with self.lock:
+            if source in self.scrapers:
+                scraper_data = self.scrapers[source]
+                scraper_instance = scraper_data['scraper']
 
-            self.logger.info(
-                'Attempting to stop scraper for source: %s...',
-                source,
-            )
+                self.logger.info(
+                    'Attempting to stop scraper for source: %s...',
+                    source,
+                )
 
-            # Signal the scraper to stop (should be implemented in the scraper itself)
-            scraper_instance.stop()
-            scraper_data['thread'].join(timeout=5)
+                # Signal the scraper to stop (should be implemented in the scraper itself)
+                if scraper_instance and hasattr(scraper_instance, 'stop'):
+                    scraper_instance.stop()
+                thread = scraper_data.get('thread')
+                if thread:
+                    thread.join(timeout=5)
 
-            del self.scrapers[source]
-            self.logger.info(
-                'Scraper for source %s has been removed from the manager.',
-                source,
-            )
-        else:
-            self.logger.warning('No scraper found for source %s.', source)
+                del self.scrapers[source]
+                self.logger.info(
+                    'Scraper for source %s has been removed from the manager.',
+                    source,
+                )
+            else:
+                self.logger.warning('No scraper found for source %s.', source)
 
     def restart_scraper(self, source):
         """
@@ -110,19 +113,16 @@ class ScraperManager:
         """
         scraper = self.get_scraper(source)
         if not scraper:
-            return {'error': f"Scraper for source '{source}' not found."}
+            raise ValueError(f"Scraper for source '{source}' not found.")
 
         if not hasattr(scraper, method_name):
-            return {'error': f"Method '{method_name}' not found on scraper '{source}'."}
+            raise AttributeError(f"Method '{method_name}' not found on scraper '{source}'.")
 
         method = getattr(scraper, method_name)
         if callable(method):
-            try:
-                return method(*args, **kwargs)
-            except Exception as e:
-                return {'error': f"Error during execution of method '{method_name}': {e}"}
+            return method(*args, **kwargs)
         else:
-            return {'error': f"'{method_name}' is not a callable method."}
+            raise TypeError(f"'{method_name}' is not a callable method.")
 
     def find_and_update_scraper_config(self, source, config):
         """
@@ -134,8 +134,8 @@ class ScraperManager:
         if scraper:
             try:
                 scraper.update_config(config)
-                print(f"Configuration for source {source} has been updated.")
+                self.logger.info('Configuration for source %s updated.', source)
                 return True
-            except Exception as e:
-                print(f"Error updating configuration for {source}: {e}")
+            except Exception:
+                self.logger.exception('Error updating configuration for source %s', source)
         return False
