@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # --- BAZA DANYCH ---
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ./backend/.env
+
+  # --- REDIS (Cache & RQ) ---
+  redis:
+    image: redis:7-alpine
+
+  # --- DJANGO API (Główny serwer) ---
+  api:
+    build: ./backend
+    command: python manage.py runserver 0.0.0.0:8000
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  # --- LLM SERVICE ---
+  llm_service:
+    build: ./backend
+    command: python manage.py run_llm_service
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - api
+      - db
+
+  # --- WORKER (RQ) ---
+  worker:
+    build: ./backend
+    command: python manage.py rqworker scraper_queue user_queue
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+
+  # --- FRONTEND (Next.js) ---
+  frontend:
+    build: ./frontend
+    command: npm run dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
