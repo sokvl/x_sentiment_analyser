@@ -1,0 +1,53 @@
+[
+  {
+    "model": "scraper.source",
+    "pk": 1,
+    "fields": {
+      "name": "twitter",
+      "base_url": "https://x.com/search?q=",
+      "login_required": false,
+      "credentials_id": null,
+      "category": "social_media"
+    }
+  },
+  {
+    "model": "scraper.config",
+    "pk": 4,
+    "fields": {
+      "name": "Test Config",
+      "active": true,
+      "created_at": "2026-03-29T00:00:00Z",
+      "updated_at": "2026-03-29T00:00:00Z",
+      "config_string": {
+        "user_config": {
+          "model": "FinBERT",
+          "tickers": ["TSLA", "NVDA", "AAPL", "MSFT", "GOOG"]
+        },
+        "scrapers_config": [
+          {
+            "source": [
+              {
+                "name": "twitter",
+                "base_url": "https://x.com/search?q="
+              }
+            ],
+            "threads": 1,
+            "credentials": {},
+            "twitter_query": {
+              "params": {
+                "lang": "en",
+                "filter": ["links"],
+                "keywords": ["stock", "market", "investing"]
+              },
+              "start_date": "2026-03-28",
+              "end_date": "2026-03-29"
+            },
+            "crawl_interval": 60,
+            "max_time_running": null,
+            "mode": "crawl"
+          }
+        ]
+      }
+    }
+  }
+]

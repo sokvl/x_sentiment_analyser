@@ -28,7 +28,7 @@ export default function SignalForecastTile({ date = new Date().toISOString().spl
             );
 
             if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
+                throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
             }
 
             const data = await response.json();

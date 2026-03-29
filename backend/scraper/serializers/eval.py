@@ -6,6 +6,7 @@ class EvalRequestSerializer(serializers.Serializer):
     source_name = serializers.CharField()
     date = serializers.DateField()
     with_save = serializers.BooleanField(default=False)
+    model_id = serializers.CharField(required=False, default=None)
 
 class EvalResponseSerializer(serializers.Serializer):
     text = serializers.CharField()

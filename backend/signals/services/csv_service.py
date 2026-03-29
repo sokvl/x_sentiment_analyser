@@ -25,11 +25,12 @@ class CSVProcessingService:
         self.signal_service = SignalService()
         self.redis_client = get_redis()
 
-    def process(self, file_obj: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    def process(self, file_obj: Any, model_id: str | None = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Parses the CSV file and evaluates sentiment for each row using Redis tasks.
         Returns a tuple of (results, errors).
         """
+        self._model_id = model_id
         results: Dict[str, Any] = {}
         errors: List[Dict[str, Any]] = []
         batch: List[Dict[str, Any]] = []
@@ -97,6 +98,8 @@ class CSVProcessingService:
         print(f"[DEBUG] Enqueuing {len(batch)} tweets for evaluation...")
         for tweet_data in batch:
             try:
+                if self._model_id:
+                    tweet_data['model_id'] = self._model_id
                 request_id = enqueue_user_data(tweet_data)
                 request_ids.append((request_id, tweet_data))
             except Exception as e:

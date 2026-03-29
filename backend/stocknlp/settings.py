@@ -203,6 +203,10 @@ TICKER_TO_INDEX_PATH = BASE_DIR / 'models' / 'ticker_to_index.json'
 
 DEFAULT_MODEL = 'transformer_finbert'
 
+# User-facing model ID used when no model is specified in config.
+# Must match a key in scraper.managers.model_registry.MODEL_ID_TO_CONFIG_KEY
+DEFAULT_MODEL_ID = os.getenv('DEFAULT_MODEL_ID', 'FinBERT')
+
 # ---------------------------------------------------------------------------
 # Django REST Framework
 # ---------------------------------------------------------------------------

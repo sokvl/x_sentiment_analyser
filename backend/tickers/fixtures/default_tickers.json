@@ -1,0 +1,57 @@
+[
+  {
+    "model": "tickers.ticker",
+    "pk": 1,
+    "fields": {
+      "type": "stock",
+      "symbol": "TSLA",
+      "full_name": "Tesla, Inc.",
+      "created_at": "2026-03-29T00:00:00Z",
+      "updated_at": "2026-03-29T00:00:00Z"
+    }
+  },
+  {
+    "model": "tickers.ticker",
+    "pk": 2,
+    "fields": {
+      "type": "stock",
+      "symbol": "NVDA",
+      "full_name": "NVIDIA Corporation",
+      "created_at": "2026-03-29T00:00:00Z",
+      "updated_at": "2026-03-29T00:00:00Z"
+    }
+  },
+  {
+    "model": "tickers.ticker",
+    "pk": 3,
+    "fields": {
+      "type": "stock",
+      "symbol": "AAPL",
+      "full_name": "Apple Inc.",
+      "created_at": "2026-03-29T00:00:00Z",
+      "updated_at": "2026-03-29T00:00:00Z"
+    }
+  },
+  {
+    "model": "tickers.ticker",
+    "pk": 4,
+    "fields": {
+      "type": "stock",
+      "symbol": "MSFT",
+      "full_name": "Microsoft Corporation",
+      "created_at": "2026-03-29T00:00:00Z",
+      "updated_at": "2026-03-29T00:00:00Z"
+    }
+  },
+  {
+    "model": "tickers.ticker",
+    "pk": 5,
+    "fields": {
+      "type": "stock",
+      "symbol": "GOOG",
+      "full_name": "Alphabet Inc.",
+      "created_at": "2026-03-29T00:00:00Z",
+      "updated_at": "2026-03-29T00:00:00Z"
+    }
+  }
+]

@@ -3,8 +3,7 @@
 export const AVAILABLE_MODELS = [
   { id: 'LSTMCNNv1', label: 'LSTM-CNN v1' },
   { id: 'FinBERT', label: 'FinBERT Sentiment' },
-  { id: 'RoBERTa', label: 'RoBERTa Base' },
-  { id: 'VADER', label: 'VADER Lexicon' },
+  { id: 'TweetBERT', label: 'TweetBERT Sentiment' },
 ];
 
 export const AVAILABLE_SOURCES = [
@@ -27,7 +26,7 @@ export const DEFAULT_CONFIG = {
   active: true,
   config_string: {
     user_config: {
-      model: 'LSTMCNNv1',
+      model: 'FinBERT',
       tickers: ['TSLA', 'NVDA', 'AAPL', 'MSFT', 'GOOG'],
     },
     scrapers_config: [

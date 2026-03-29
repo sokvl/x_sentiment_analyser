@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from transformers import BertForSequenceClassification
+from transformers import AutoModelForSequenceClassification
 from .base_loader import BaseModelLoader
 
 
@@ -46,7 +46,7 @@ class TransformerModelLoader(BaseModelLoader):
     def load_model(self, model_params: dict[str, Any]) -> nn.Module:
         """Load a HuggingFace transformer model for sequence classification."""
         try:
-            model = BertForSequenceClassification.from_pretrained(
+            model = AutoModelForSequenceClassification.from_pretrained(
                 model_params['weights_path'],
             )
             model.to(self.device)

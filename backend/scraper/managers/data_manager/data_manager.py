@@ -6,78 +6,61 @@ import logging
 from django.apps import apps
 from django.conf import settings
 from django.db import DatabaseError, transaction
-from transformers import BertTokenizer
 
-from .model_processors import get_preprocessor
-
+logger = logging.getLogger(__name__)
 
 
 class DataManager:
-    def __init__(self, model_bundle: dict):
-        self.model_type = model_bundle['model_type']
-        self.model_params = model_bundle['model_params']
-        if self.model_type == 'lstmcnn_model':
-            # TO DO LATER WE HAVE TO ADD FULL SUPPORT
-            self.word_to_index = self._load_json(settings.WORD_TO_INDEX_PATH)
-            self.max_len = 30
-            self.pad_token = 0
-            self.preprocessor = get_preprocessor(
-                self.model_type,
-                word_to_index=self.word_to_index,
-                max_len=self.max_len,
-                pad_token=self.pad_token,
-            )
-            # Load ticker vocabulary for ticker encoding
-            self.ticker_to_index = self._load_json(
-                settings.TICKER_TO_INDEX_PATH,
-            )
-        elif self.model_type == 'transformer_model':
-            tokenizer = BertTokenizer.from_pretrained(
-                self.model_params['weights_path'],
-            )
-            self.preprocessor = get_preprocessor(
-                self.model_type,
-                tokenizer=tokenizer,
-            )
-            logging.getLogger(__name__).debug(
-                'Tokenizer loaded: %s', tokenizer,
-            )
-        else:
-            raise ValueError('Unknown model type')
+    """
+    Evaluates sentiment for tweets using the model specified at call time.
 
-        cfg = apps.get_app_config('scraper')
-        self.logger = logging.getLogger(__name__)
-        self.model_manager = cfg.LSTM_MODEL_MANAGER
+    The actual model selection is delegated to the ModelRegistry, which
+    lazily loads and caches ModelManager/preprocessor pairs.  This class
+    only needs a reference to the registry and the default model ID
+    (used when callers don't specify one).
+    """
 
-    def _load_json(self, path: str) -> dict:
+    def __init__(self, model_registry, default_model_id: str):
+        self.registry = model_registry
+        self.default_model_id = default_model_id
+
+    @staticmethod
+    def _load_json(path: str) -> dict:
         with open(path, encoding='utf-8') as file:
             return json.load(file)
 
-    def eval_sentiment(self, tweet_object: dict, with_save: bool = False) -> dict:
+    def eval_sentiment(
+        self,
+        tweet_object: dict,
+        with_save: bool = False,
+        model_id: str | None = None,
+    ) -> dict:
         if 'text' not in tweet_object or 'ticker' not in tweet_object:
             raise ValueError(
                 "tweet_object must contain 'text' and 'ticker' keys.",
             )
 
+        model_id = model_id or self.default_model_id
+        model_manager, preprocessor, model_type = self.registry.get(model_id)
+
         tweet = tweet_object['text']
         ticker = tweet_object['ticker']
-        processed_input = self.preprocessor.preprocess(tweet)
+        processed_input = preprocessor.preprocess(tweet)
 
         try:
-            if self.model_type == 'lstmcnn_model':
-                ticker_index = self.ticker_to_index.get(
-                    ticker, 0,
-                )  # 0 for unknown ticker
-                prediction = self.model_manager.predict(
+            if model_type == 'lstmcnn_model':
+                ticker_to_index = self._load_json(settings.TICKER_TO_INDEX_PATH)
+                ticker_index = ticker_to_index.get(ticker, 0)
+                prediction = model_manager.predict(
                     processed_input,
                     [ticker_index],
                 )
-            elif self.model_type == 'transformer_model':
-                prediction = self.model_manager.predict(processed_input, None)
+            elif model_type == 'transformer_model':
+                prediction = model_manager.predict(processed_input, None)
             else:
-                raise ValueError('Unsupported model type')
+                raise ValueError(f'Unsupported model type: {model_type}')
         except Exception:
-            self.logger.exception('Prediction failed')
+            logger.exception('Prediction failed for model %s', model_id)
             prediction = {
                 'predicted_sentiment': 'unknown',
                 'predicted_probabilities': [],
@@ -90,17 +73,21 @@ class DataManager:
         }
 
         if with_save:
-            self.process_and_save_post(tweet_data)
+            self.process_and_save_post(tweet_data, model_manager)
 
         return tweet_data
 
-    def process_and_save_post(self, data: dict):
+    def process_and_save_post(self, data: dict, model_manager=None):
         Post = apps.get_model('scraper', 'Post')
         PostMeta = apps.get_model('scraper', 'PostMeta')
         Ticker = apps.get_model('tickers', 'Ticker')
         Content = apps.get_model('scraper', 'Content')
         Source = apps.get_model('scraper', 'Source')
         PostPrediction = apps.get_model('scraper', 'PostPrediction')
+
+        if model_manager is None:
+            model_manager, _, _ = self.registry.get(self.default_model_id)
+
         try:
             with transaction.atomic():
                 ticker, _ = Ticker.objects.get_or_create(symbol=data['ticker'])
@@ -116,21 +103,23 @@ class DataManager:
                 post_prediction, _ = PostPrediction.objects.get_or_create(
                     prediction=data['prediction'],
                     probabilities=data['predicted_probabilities'],
-                    model_name=self.model_manager.get_model_name(),
+                    model_name=model_manager.get_model_name(),
                 )
                 post, created = Post.objects.get_or_create(
                     time_stamp=data['date'],
                     related_ticker=ticker,
                     related_content=content,
-                    post_metadata=post_meta,
-                    post_prediction=post_prediction,
+                    defaults={
+                        'post_metadata': post_meta,
+                        'post_prediction': post_prediction,
+                    },
                 )
             if created:
-                self.logger.info('New post saved: %s', post)
+                logger.info('New post saved: %s', post)
             else:
-                self.logger.debug('Post already exists: %s', post)
+                logger.debug('Post already exists: %s', post)
         except DatabaseError:
-            self.logger.exception('Database error occurred while saving data')
+            logger.exception('Database error occurred while saving data')
         except Exception:
-            self.logger.exception('Unexpected error while saving data')
+            logger.exception('Unexpected error while saving data')
             raise

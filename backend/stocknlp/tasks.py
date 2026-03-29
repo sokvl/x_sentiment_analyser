@@ -93,15 +93,19 @@ def priority_worker() -> None:
 
             if queue_name == b'user_queue':
                 request_id = data['request_id']
-                logger.debug("Processing user request %s", request_id)
-                sentiment_result = data_manager.eval_sentiment(data, with_save=False)
+                model_id = data.get('model_id')
+                logger.debug("Processing user request %s (model=%s)", request_id, model_id)
+                sentiment_result = data_manager.eval_sentiment(
+                    data, with_save=False, model_id=model_id,
+                )
                 # Push result to a per-request response key with configurable TTL
                 from django.conf import settings
                 client.rpush(f'response_queue:{request_id}', json.dumps(sentiment_result))
                 client.expire(f'response_queue:{request_id}', settings.CACHE_TTL_WORKER_RESULT)
             else:
-                logger.debug("Processing scraper post for ticker %s", data.get('ticker'))
-                data_manager.eval_sentiment(data, with_save=True)
+                model_id = data.get('model_id')
+                logger.debug("Processing scraper post for ticker %s (model=%s)", data.get('ticker'), model_id)
+                data_manager.eval_sentiment(data, with_save=True, model_id=model_id)
 
             backoff = 1  # reset after a successful cycle
 

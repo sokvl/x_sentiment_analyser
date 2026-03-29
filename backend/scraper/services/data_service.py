@@ -16,6 +16,7 @@ class DataService:
             raise APIException("DataManager not initialized")
 
     def evaluate_sentiment(self, tweet_data: dict, with_save: bool = False):
+        model_id = tweet_data.get('model_id')
         try:
             result = self.data_manager.eval_sentiment(
                 {
@@ -23,7 +24,9 @@ class DataService:
                     'ticker': tweet_data['ticker'],
                     'source_name': tweet_data.get('source_name', ''),
                     'date': tweet_data.get('date'),
-                }, with_save
+                },
+                with_save,
+                model_id=model_id,
             )
             return result
         except ValueError as e:
@@ -41,12 +44,12 @@ class DataService:
 
         Post = apps.get_model('scraper', 'Post')
         Ticker = apps.get_model('tickers', 'Ticker')
-        
+
         end_date = now().date()
         start_date = end_date - timedelta(days=days)
 
         query = Post.objects.filter(time_stamp__range=[start_date, end_date])
-        
+
         if ticker_symbols and ticker_symbols != 'all':
             symbols = [s.strip() for s in ticker_symbols.split(',')]
             query = query.filter(related_ticker__symbol__in=symbols)
@@ -62,19 +65,19 @@ class DataService:
         )
 
         results_map = {t.symbol: {} for t in active_tickers}
-        
+
         for entry in aggregations:
             symbol = entry['related_ticker__symbol']
             date_str = entry['day'].isoformat()
             pred = entry['post_prediction__prediction']
             count = entry['count']
-            
+
             if symbol not in results_map:
                 continue
-                
+
             if date_str not in results_map[symbol]:
                 results_map[symbol][date_str] = {0: 0, 1: 0, 2: 0}
-            
+
             day_data = results_map[symbol][date_str]
             day_data[pred] = count
 
@@ -83,7 +86,5 @@ class DataService:
             for symbol, predictions in results_map.items()
         ]
 
-        # Cache duration is controlled via settings.CACHE_TTL_PREDICTIONS
         cache.set(cache_key, result, timeout=settings.CACHE_TTL_PREDICTIONS)
         return result
-

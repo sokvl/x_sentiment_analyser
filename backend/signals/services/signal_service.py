@@ -24,10 +24,8 @@ class SignalService:
             return list(Ticker.objects.all())
         
         symbols = [s.strip().upper() for s in tickers_param.split(',')]
-        # Handle $ prefix if necessary
-        normalized_symbols = [s if s.startswith('$') else f"${s}" for s in symbols]
         
-        tickers = list(Ticker.objects.filter(symbol__in=normalized_symbols))
+        tickers = list(Ticker.objects.filter(symbol__in=symbols))
         if not tickers:
             raise ValueError(f"No tickers found for symbols: {tickers_param}")
         return tickers
