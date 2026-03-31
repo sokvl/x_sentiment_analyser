@@ -45,6 +45,7 @@ class DataManager:
 
         tweet = tweet_object['text']
         ticker = tweet_object['ticker']
+        cleaned_text = preprocessor.clean(tweet)
         processed_input = preprocessor.preprocess(tweet)
 
         try:
@@ -68,6 +69,7 @@ class DataManager:
 
         tweet_data = {
             **tweet_object,
+            'cleaned_text': cleaned_text,
             'prediction': prediction.get('predicted_sentiment'),
             'predicted_probabilities': prediction.get('predicted_probabilities'),
         }

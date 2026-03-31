@@ -51,6 +51,13 @@ class Scraper(ABC):
         self.stop_event.set()
         return
 
+    def reset(self):
+        """Reset events and state so the scraper can be restarted in a new thread."""
+        self.stop_event.clear()
+        self.pause_event.clear()
+        self._set_status(ScraperStates.IDLE)
+        self.current_task = {}
+
     def update_config(self, config):
         self.config = config
         self._log(LogTypes.MESSAGE, "Config updated.")

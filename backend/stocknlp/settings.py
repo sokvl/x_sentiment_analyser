@@ -203,6 +203,9 @@ TICKER_TO_INDEX_PATH = BASE_DIR / 'models' / 'ticker_to_index.json'
 
 DEFAULT_MODEL = 'transformer_finbert'
 
+# Selenium Remote WebDriver (Selenium Grid)
+SELENIUM_GRID_URL = os.getenv('SELENIUM_GRID_URL', 'http://selenium:4444/wd/hub')
+
 # User-facing model ID used when no model is specified in config.
 # Must match a key in scraper.managers.model_registry.MODEL_ID_TO_CONFIG_KEY
 DEFAULT_MODEL_ID = os.getenv('DEFAULT_MODEL_ID', 'FinBERT')

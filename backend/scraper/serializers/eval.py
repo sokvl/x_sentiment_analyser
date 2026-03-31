@@ -10,10 +10,8 @@ class EvalRequestSerializer(serializers.Serializer):
 
 class EvalResponseSerializer(serializers.Serializer):
     text = serializers.CharField()
+    cleaned_text = serializers.CharField()
     ticker = serializers.CharField()
-    processed_text = serializers.ListField(
-        child=serializers.IntegerField(), help_text='Token indices from preprocessor',
-    )
     predicted_sentiment = serializers.IntegerField(source='prediction')
     predicted_probabilities = serializers.ListField(
         child=serializers.FloatField(),

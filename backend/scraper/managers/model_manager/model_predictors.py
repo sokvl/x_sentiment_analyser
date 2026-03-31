@@ -48,6 +48,38 @@ class LSTMCNNPredictor(BaseModelPredictor):
 
 
 class TransformerModelPredictor(BaseModelPredictor):
+    """Predictor for HuggingFace transformer models.
+
+    Supports an optional ``label_map`` that remaps model-native label indices
+    to the project-standard ordering (0=negative, 1=neutral, 2=positive).
+
+    For example FinBERT (yiyanghkust/finbert-tone) outputs:
+        LABEL_0 = neutral, LABEL_1 = positive, LABEL_2 = negative
+    The label_map ``[1, 2, 0]`` translates this to standard ordering.
+    """
+
+    def __init__(self, label_map: list[int] | None = None):
+        self.label_map = label_map
+
+    def _remap(
+        self, probabilities: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Reorder probability columns according to ``label_map`` and
+        return (remapped_probs, predicted_class)."""
+        if self.label_map is None:
+            predicted = torch.argmax(probabilities, dim=-1)
+            return probabilities, predicted
+
+        # Build a new tensor with columns in standard order.
+        num_classes = probabilities.size(-1)
+        remapped = torch.zeros_like(probabilities)
+        for model_idx, standard_idx in enumerate(self.label_map):
+            if standard_idx < num_classes:
+                remapped[..., standard_idx] = probabilities[..., model_idx]
+
+        predicted = torch.argmax(remapped, dim=-1)
+        return remapped, predicted
+
     def predict(
         self,
         model: nn.Module,
@@ -58,10 +90,7 @@ class TransformerModelPredictor(BaseModelPredictor):
         model.eval()
         try:
             with torch.no_grad():
-                # Move tokenizer output to target device
-                # x_text might be a BatchEncoding (which behaves like a dict) or a Tensor
                 if hasattr(x_text, 'items'):
-                    # Use a new dict to avoid modifying the input in place if it's a BatchEncoding
                     x_text_moved = {}
                     for k, v in x_text.items():
                         if isinstance(v, torch.Tensor):
@@ -83,7 +112,8 @@ class TransformerModelPredictor(BaseModelPredictor):
                 probabilities = torch.nn.functional.softmax(
                     logits, dim=1,
                 ).cpu()
-                predicted_sentiment = torch.argmax(probabilities, dim=-1).cpu()
+
+                probabilities, predicted_sentiment = self._remap(probabilities)
 
             return {
                 'predicted_sentiment': int(predicted_sentiment.item()),
@@ -97,11 +127,12 @@ class TransformerModelPredictor(BaseModelPredictor):
             ) from e
 
 
-def get_model_predictor(model_name: str) -> BaseModelPredictor:
-    predictors = {
-        'lstmcnn_model': LSTMCNNPredictor,
-        'transformer_model': TransformerModelPredictor,
-    }
-    if model_name not in predictors:
-        raise ValueError(f"Unknown model: {model_name}")
-    return predictors[model_name]()
+def get_model_predictor(
+    model_name: str,
+    label_map: list[int] | None = None,
+) -> BaseModelPredictor:
+    if model_name == 'lstmcnn_model':
+        return LSTMCNNPredictor()
+    if model_name == 'transformer_model':
+        return TransformerModelPredictor(label_map=label_map)
+    raise ValueError(f"Unknown model: {model_name}")

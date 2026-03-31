@@ -100,7 +100,7 @@ def priority_worker() -> None:
                 )
                 # Push result to a per-request response key with configurable TTL
                 from django.conf import settings
-                client.rpush(f'response_queue:{request_id}', json.dumps(sentiment_result))
+                client.rpush(f'response_queue:{request_id}', json.dumps(sentiment_result, default=_serialize))
                 client.expire(f'response_queue:{request_id}', settings.CACHE_TTL_WORKER_RESULT)
             else:
                 model_id = data.get('model_id')

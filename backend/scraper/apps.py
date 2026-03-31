@@ -26,7 +26,11 @@ class ScraperConfig(AppConfig):
 
             logger.debug('Initializing MODEL_REGISTRY...')
             self.MODEL_REGISTRY = ModelRegistry(model_configs)
-            logger.debug('MODEL_REGISTRY initialized.')
+            logger.info(
+                'MODEL_REGISTRY initialized. Available: %s | Unavailable: %s',
+                self.MODEL_REGISTRY.available_models,
+                self.MODEL_REGISTRY.unavailable_models,
+            )
         except Exception:
             logger.exception('Failed to initialize MODEL_REGISTRY')
 

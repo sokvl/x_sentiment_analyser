@@ -31,7 +31,10 @@ class ModelManager:
         self.loader = get_model_loader(
             self.model_name, self.model_params, self.device,
         )
-        self.predictor = get_model_predictor(self.model_name)
+        self.predictor = get_model_predictor(
+            self.model_name,
+            label_map=self.model_params.get('label_map'),
+        )
         self.load_model()
 
     def load_model(self, model_params: dict[str, Any] | None = None):

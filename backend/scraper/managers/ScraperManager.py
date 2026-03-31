@@ -25,22 +25,36 @@ class ScraperManager:
         """
         return self.scrapers.get(source, {}).get('scraper')
 
+    def _start_thread(self, source, scraper_instance):
+        thread = Thread(
+            target=scraper_instance.run_procedure,
+            name=f"{source}_scraper_thread",
+            daemon=True,
+        )
+        thread.start()
+        self.scrapers[source]['thread'] = thread
+
     def set_scraper(self, source):
         """
-        Creates a new scraper for the given source and
-        starts it in a separate thread.
-        If a scraper for the source already exists, it will not create a new one.
+        Creates a new scraper for the given source and starts it in a separate thread.
+        If a stopped scraper already exists its browser session is reused — login is skipped
+        when the scraper detects it is already authenticated.
         """
         with self.lock:
-            if source in self.scrapers:
-                self.logger.warning(
-                    'Scraper for source %s already exists.', source,
-                )
+            existing = self.scrapers.get(source)
+            if existing:
+                scraper_instance = existing['scraper']
+                thread = existing.get('thread')
+                if thread and thread.is_alive():
+                    self.logger.warning('Scraper for source %s is already running.', source)
+                    return
+                # Reuse the stopped instance (keeps the browser session)
+                self.logger.info('Reusing stopped scraper for source %s.', source)
+                scraper_instance.reset()
+                self._start_thread(source, scraper_instance)
                 return
 
-            current_threads = active_count()
-
-            if current_threads >= self.max_threads:
+            if active_count() >= self.max_threads:
                 self.logger.error(
                     'Cannot start new scraper. Maximum thread limit of %s reached.',
                     self.max_threads,
@@ -49,61 +63,66 @@ class ScraperManager:
 
             scraper_instance = TwitterScraper()
             self.scrapers[source] = {'scraper': scraper_instance, 'thread': None}
-
-            thread = Thread(
-                target=scraper_instance.run_procedure,
-                name=f"{source}_scraper_thread", daemon=True,
-            )
-            thread.start()
-            self.scrapers[source]['thread'] = thread
+            self._start_thread(source, scraper_instance)
 
     def stop_scraper(self, source):
         """
-        Stops the scraper (if running) for the specified source and removes it from the manager.
+        Signals the scraper to stop and waits for the thread to finish.
+        The scraper instance (and its browser session) is kept in the manager
+        so it can be resumed without a fresh login.
         """
         with self.lock:
-            if source in self.scrapers:
-                scraper_data = self.scrapers[source]
-                scraper_instance = scraper_data['scraper']
-
-                self.logger.info(
-                    'Attempting to stop scraper for source: %s...',
-                    source,
-                )
-
-                # Signal the scraper to stop (should be implemented in the scraper itself)
-                if scraper_instance and hasattr(scraper_instance, 'stop'):
-                    scraper_instance.stop()
-                thread = scraper_data.get('thread')
-                if thread:
-                    thread.join(timeout=5)
-
-                del self.scrapers[source]
-                self.logger.info(
-                    'Scraper for source %s has been removed from the manager.',
-                    source,
-                )
-            else:
+            if source not in self.scrapers:
                 self.logger.warning('No scraper found for source %s.', source)
+                return
+
+            scraper_data = self.scrapers[source]
+            scraper_instance = scraper_data['scraper']
+
+            self.logger.info('Stopping scraper for source: %s...', source)
+            if scraper_instance and hasattr(scraper_instance, 'stop'):
+                scraper_instance.stop()
+            thread = scraper_data.get('thread')
+            if thread:
+                thread.join(timeout=10)
+            scraper_data['thread'] = None
+            self.logger.info('Scraper for source %s stopped (browser session preserved).', source)
+
+    def destroy_scraper(self, source):
+        """
+        Fully shuts down the scraper including its browser session and removes it from the manager.
+        Use this when a clean slate is needed (e.g. credential change).
+        """
+        with self.lock:
+            if source not in self.scrapers:
+                self.logger.warning('No scraper found for source %s.', source)
+                return
+            scraper_data = self.scrapers[source]
+            scraper_instance = scraper_data['scraper']
+            if scraper_instance and hasattr(scraper_instance, 'stop'):
+                scraper_instance.stop()
+            thread = scraper_data.get('thread')
+            if thread:
+                thread.join(timeout=10)
+            # Quit the browser
+            instance = getattr(scraper_instance, 'instance', None)
+            if instance:
+                try:
+                    instance.quit()
+                except Exception:
+                    pass
+            del self.scrapers[source]
+            self.logger.info('Scraper for source %s destroyed.', source)
 
     def restart_scraper(self, source):
         """
-        Restarts the scraper for a given source by stopping it first (if it exists)
-        and then creating a new instance.
+        Stops the scraper thread (preserving the browser) then restarts it.
+        The scraper will skip login if it detects an active session.
         """
-        self.logger.info(
-            'Restarting scraper for source: %s...',
-            source,
-        )
-        # Step 1: Stop the existing scraper if it exists
+        self.logger.info('Restarting scraper for source: %s...', source)
         self.stop_scraper(source)
-
-        # Step 2: Create a new scraper
         self.set_scraper(source)
-        self.logger.info(
-            'Scraper for source %s has been restarted.',
-            source,
-        )
+        self.logger.info('Scraper for source %s restarted.', source)
 
     def access_scraper(self, source, method_name, *args, **kwargs):
         """

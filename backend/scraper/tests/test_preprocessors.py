@@ -21,14 +21,40 @@ class LSTMCNNPreprocessorTests(TestCase):
             pad_token=0,
         )
 
+    # --- Pipeline step tests ---
+
+    def test_pipeline_has_expected_steps(self):
+        self.assertEqual(self.preprocessor.pipeline, [
+            'lowercase', 'strip_urls', 'strip_hashtags',
+            'strip_special_chars', 'normalize_whitespace',
+        ])
+
+    def test_clean_lowercases(self):
+        self.assertIn('apple', self.preprocessor.clean('APPLE'))
+
+    def test_clean_strips_urls(self):
+        cleaned = self.preprocessor.clean('apple https://example.com stock')
+        self.assertNotIn('http', cleaned)
+
+    def test_clean_strips_hashtags(self):
+        cleaned = self.preprocessor.clean('#trending apple')
+        self.assertNotIn('#trending', cleaned)
+        self.assertIn('apple', cleaned)
+
+    def test_clean_strips_special_chars(self):
+        cleaned = self.preprocessor.clean('apple!!! stock???')
+        self.assertEqual(cleaned, 'apple stock')
+
+    # --- Full preprocess tests ---
+
     def test_basic_preprocessing(self):
         result = self.preprocessor.preprocess('Apple stock is going up')
         self.assertEqual(len(result), 10)
-        self.assertEqual(result[0], 1)  # apple
-        self.assertEqual(result[1], 2)  # stock
-        self.assertEqual(result[2], 3)  # is
-        self.assertEqual(result[3], 4)  # going
-        self.assertEqual(result[4], 5)  # up
+        self.assertEqual(result[0], 1)   # apple
+        self.assertEqual(result[1], 2)   # stock
+        self.assertEqual(result[2], 3)   # is
+        self.assertEqual(result[3], 4)   # going
+        self.assertEqual(result[4], 5)   # up
 
     def test_pads_short_text(self):
         result = self.preprocessor.preprocess('apple')
@@ -41,26 +67,6 @@ class LSTMCNNPreprocessorTests(TestCase):
         result = self.preprocessor.preprocess(long_text)
         self.assertEqual(len(result), 10)
 
-    def test_removes_urls(self):
-        result = self.preprocessor.preprocess('apple https://example.com stock')
-        self.assertNotEqual(result[0], 0)  # 'apple' should map to something
-
-    def test_removes_hashtags(self):
-        result = self.preprocessor.preprocess('#trending apple stock')
-        # '#trending' should be removed, 'apple stock' should remain
-        self.assertEqual(result[0], 1)  # apple
-        self.assertEqual(result[1], 2)  # stock
-
-    def test_removes_special_characters(self):
-        result = self.preprocessor.preprocess('apple!!! stock??? $$$')
-        self.assertEqual(result[0], 1)  # apple
-        self.assertEqual(result[1], 2)  # stock
-
-    def test_lowercases_text(self):
-        result = self.preprocessor.preprocess('APPLE STOCK')
-        self.assertEqual(result[0], 1)  # 'apple' after lowering
-        self.assertEqual(result[1], 2)  # 'stock'
-
     def test_unknown_words_get_pad_token(self):
         result = self.preprocessor.preprocess('xyzxyz')
         self.assertEqual(result[0], 0)
@@ -71,14 +77,38 @@ class LSTMCNNPreprocessorTests(TestCase):
 
 
 class TransformerPreprocessorTests(TestCase):
-    def test_calls_tokenizer(self):
-        mock_tokenizer = MagicMock()
-        mock_tokenizer.return_value = {'input_ids': [101, 2003, 102]}
-        preprocessor = TransformerPreprocessor(mock_tokenizer)
+    def setUp(self):
+        self.mock_tokenizer = MagicMock()
+        self.mock_tokenizer.return_value = {'input_ids': [101, 2003, 102]}
+        self.preprocessor = TransformerPreprocessor(self.mock_tokenizer)
 
-        result = preprocessor.preprocess('test text')
-        mock_tokenizer.assert_called_once_with(
-            'test text',
+    def test_pipeline_has_expected_steps(self):
+        self.assertEqual(self.preprocessor.pipeline, [
+            'strip_urls', 'strip_mentions', 'normalize_whitespace',
+        ])
+
+    def test_clean_strips_urls(self):
+        cleaned = self.preprocessor.clean('check https://t.co/abc this')
+        self.assertNotIn('http', cleaned)
+
+    def test_clean_strips_mentions(self):
+        cleaned = self.preprocessor.clean('@elonmusk is bullish')
+        self.assertNotIn('@elonmusk', cleaned)
+        self.assertIn('bullish', cleaned)
+
+    def test_clean_preserves_case(self):
+        cleaned = self.preprocessor.clean('TSLA is Bullish')
+        self.assertIn('TSLA', cleaned)
+        self.assertIn('Bullish', cleaned)
+
+    def test_clean_preserves_hashtags(self):
+        cleaned = self.preprocessor.clean('#TSLA moon')
+        self.assertIn('#TSLA', cleaned)
+
+    def test_calls_tokenizer_with_cleaned_text(self):
+        self.preprocessor.preprocess('check https://t.co/x @user text')
+        self.mock_tokenizer.assert_called_once_with(
+            'check text',
             return_tensors='pt',
             padding=True,
             truncation=True,

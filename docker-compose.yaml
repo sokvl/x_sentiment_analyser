@@ -1,5 +1,5 @@
 services:
-  # --- BAZA DANYCH ---
+  # --- DATABASE ---
   db:
     image: postgres:15-alpine
     volumes:
@@ -28,23 +28,12 @@ services:
     depends_on:
       - db
       - redis
+      - selenium
 
-  # --- LLM SERVICE ---
-  llm_service:
+  # --- LLM WORKER (custom priority_worker consuming user_queue → scraper_queue) ---
+  llm_worker:
     build: ./backend
-    command: python manage.py run_llm_service
-    env_file:
-      - ./backend/.env
-    volumes:
-      - ./backend:/app:z
-    depends_on:
-      - api
-      - db
-
-  # --- WORKER (RQ) ---
-  worker:
-    build: ./backend
-    command: python manage.py rqworker scraper_queue user_queue
+    command: python manage.py run_llm_worker
     env_file:
       - ./backend/.env
     volumes:
@@ -52,6 +41,14 @@ services:
     depends_on:
       - db
       - redis
+
+  # --- SELENIUM (Remote Chrome for scraper) ---
+  selenium:
+    image: selenium/standalone-chrome:latest
+    shm_size: '2g'
+    ports:
+      - "4444:4444"
+      - "7900:7900"
 
   # --- FRONTEND (Next.js) ---
   frontend:
