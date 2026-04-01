@@ -8,6 +8,9 @@ from django.db.models.functions import TruncDate
 from django.utils.timezone import now
 from rest_framework.exceptions import ValidationError, APIException
 
+PREDICTION_CLASSES = {0: 0, 1: 0, 2: 0}  # negative, neutral, positive
+
+
 class DataService:
     def __init__(self):
         try:
@@ -76,7 +79,7 @@ class DataService:
                 continue
 
             if date_str not in results_map[symbol]:
-                results_map[symbol][date_str] = {0: 0, 1: 0, 2: 0}
+                results_map[symbol][date_str] = dict(PREDICTION_CLASSES)
 
             day_data = results_map[symbol][date_str]
             day_data[pred] = count

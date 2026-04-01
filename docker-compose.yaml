@@ -1,5 +1,5 @@
 services:
-  # --- DATABASE ---
+  # --- DATABASE
   db:
     image: postgres:15-alpine
     volumes:
@@ -11,11 +11,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
-  # --- REDIS (Cache & RQ) ---
+  # --- REDIS
   redis:
     image: redis:7-alpine
 
-  # --- DJANGO API (Główny serwer) ---
+  # --- DJANGO API
   api:
     build: ./backend
     command: python manage.py runserver 0.0.0.0:8000
@@ -30,7 +30,7 @@ services:
       - redis
       - selenium
 
-  # --- LLM WORKER (custom priority_worker consuming user_queue → scraper_queue) ---
+  # --- LLM WORKER
   llm_worker:
     build: ./backend
     command: python manage.py run_llm_worker
@@ -42,7 +42,7 @@ services:
       - db
       - redis
 
-  # --- SELENIUM (Remote Chrome for scraper) ---
+  # --- SELENIUM
   selenium:
     image: selenium/standalone-chrome:latest
     shm_size: '2g'
@@ -50,7 +50,7 @@ services:
       - "4444:4444"
       - "7900:7900"
 
-  # --- FRONTEND (Next.js) ---
+  # --- FRONTEND
   frontend:
     build: ./frontend
     command: npm run dev

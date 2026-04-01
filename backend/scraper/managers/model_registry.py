@@ -162,9 +162,6 @@ class ModelRegistry:
 
     def _ensure_loaded(self, config_key: str) -> None:
         """Load a model into the registry if not already present."""
-        if config_key in self._managers:
-            return
-
         with self._lock:
             if config_key in self._managers:
                 return

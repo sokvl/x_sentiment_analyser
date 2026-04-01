@@ -6,7 +6,7 @@ class SignalSerializer(serializers.ModelSerializer):
     class Meta:
         model = Signal
         fields = [
-            'signal_id', 'signal_type', 'ticker_id',
-            'confidence_score', 'generated_at', 'used_model', 'config_ig',
+            'signal_id', 'signal_type', 'ticker',
+            'confidence_score', 'generated_at', 'used_model', 'config',
         ]
         read_only_fields = ['signal_id', 'generated_at']

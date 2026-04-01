@@ -39,17 +39,14 @@ class Scraper(ABC):
     def pause(self) -> None:
         self._set_status(ScraperStates.PAUSED)
         self.pause_event.set()
-        return
 
     def resume(self):
         self._set_status(ScraperStates.RUNNING)
         self.pause_event.clear()
-        return
 
     def stop(self):
         self._set_status(ScraperStates.STOPPED)
         self.stop_event.set()
-        return
 
     def reset(self):
         """Reset events and state so the scraper can be restarted in a new thread."""
@@ -68,7 +65,7 @@ class Scraper(ABC):
 
     def _set_status(self, new_state):
         self.state = new_state
-        self._log(LogTypes.MESSAGE, "State changed: %s" % new_state)
+        self._log(LogTypes.MESSAGE, f"State changed: {new_state}")
 
     def _update_task(self, new_task, overwrite=False):
         """
@@ -79,11 +76,11 @@ class Scraper(ABC):
         - overwrite: If True, replaces the entire task. If False, updates only the specified keys.
         """
         if overwrite:
-            self._log(LogTypes.MESSAGE, "Task Overwritten: %s" % new_task)
+            self._log(LogTypes.MESSAGE, f"Task Overwritten: {new_task}")
             self.current_task = new_task
         else:
             if not isinstance(self.current_task, dict):
-                self.current_task = {}  # Inicjalizacja na wypadek braku taska
+                self.current_task = {} 
             self.current_task.update(new_task)
 
     def get_state(self) -> dict:

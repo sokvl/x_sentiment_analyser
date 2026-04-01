@@ -48,18 +48,17 @@ class ParseDateRangeTests(TestCase):
 
     def test_parses_valid_dates(self):
         start, end = self.service.parse_date_range('2024-01-01', '2024-01-31')
-        self.assertEqual(start, date(2023, 12, 31))  # start - 1 day
-        self.assertEqual(end, date(2024, 1, 31))
+        self.assertEqual(start, date(2024, 1, 1))
+        self.assertEqual(end, date(2024, 2, 1))  # end + 1 day (yfinance exclusive)
 
     def test_defaults_end_to_today(self):
         start, end = self.service.parse_date_range('2024-01-01', None)
-        self.assertEqual(end, date.today())
+        self.assertEqual(end, date.today() + timedelta(days=1))
 
     def test_defaults_start_to_end(self):
         start, end = self.service.parse_date_range(None, '2024-06-15')
-        # start defaults to end, then subtract 1 day
-        self.assertEqual(start, date(2024, 6, 14))
-        self.assertEqual(end, date(2024, 6, 15))
+        self.assertEqual(start, date(2024, 6, 15))
+        self.assertEqual(end, date(2024, 6, 16))  # end + 1 day (yfinance exclusive)
 
     def test_invalid_date_format_raises(self):
         with self.assertRaises(ValidationError):

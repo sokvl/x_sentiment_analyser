@@ -26,10 +26,10 @@ class TickerModelTests(TestCase):
         with self.assertRaises(IntegrityError):
             Ticker.objects.create(symbol='AAPL', type='stock', full_name='Apple 2')
 
-    def test_full_name_unique(self):
-        Ticker.objects.create(symbol='AAPL', type='stock', full_name='Apple Inc.')
-        with self.assertRaises(IntegrityError):
-            Ticker.objects.create(symbol='AAPL2', type='stock', full_name='Apple Inc.')
+    def test_full_name_allows_duplicates(self):
+        Ticker.objects.create(symbol='GOOG', type='stock', full_name='Alphabet Inc.')
+        Ticker.objects.create(symbol='GOOGL', type='stock', full_name='Alphabet Inc.')
+        self.assertEqual(Ticker.objects.filter(full_name='Alphabet Inc.').count(), 2)
 
     def test_default_ordering_by_symbol(self):
         Ticker.objects.create(symbol='TSLA', type='stock', full_name='Tesla Inc.')

@@ -20,10 +20,7 @@ class ScraperService:
         if not scraper:
             raise ValueError(f"Scraper for source '{source}' not found")
 
-        result = self.scraper_manager.access_scraper(source, "pause")
-
-        if not result:
-            raise RuntimeError("Failed to pause scraper")
+        self.scraper_manager.access_scraper(source, "pause")
 
         return {"message": f"Scraper '{source}' paused"}
 
@@ -34,10 +31,7 @@ class ScraperService:
         if not scraper:
             raise ValueError(f"Scraper '{source}' not found")
 
-        result = self.scraper_manager.access_scraper(source, "resume")
-
-        if not result:
-            raise RuntimeError("Failed to resume scraper")
+        self.scraper_manager.access_scraper(source, "resume")
 
         return {"message": f"Scraper '{source}' resumed"}
 

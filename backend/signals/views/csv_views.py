@@ -12,7 +12,6 @@ class ProcessCSVView(APIView):
     def post(self, request):
         file = request.FILES.get('file')
         model_id = request.data.get('model_id')
-        print(f"[DEBUG] Received CSV upload request for file: {getattr(file, 'name', 'Unknown')}, model: {model_id}")
         if not file or not file.name.endswith('.csv'):
             return Response(
                 {'error': 'Invalid file format. Please upload a CSV file.'},

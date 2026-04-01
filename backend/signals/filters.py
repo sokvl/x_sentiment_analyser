@@ -13,8 +13,8 @@ class SignalFilter(django_filters.FilterSet):
         field_name='generated_at', lookup_expr='lte',
     )
     ticker_id = django_filters.NumberFilter(
-        field_name='ticker_id__ticker_id',
-    )  # Filtr po ticker_id
+        field_name='ticker__ticker_id',
+    )
 
     class Meta:
         model = Signal

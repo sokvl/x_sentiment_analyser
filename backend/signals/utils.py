@@ -1,6 +1,7 @@
 # signals/utils.py
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from datetime import timedelta
 
@@ -9,7 +10,7 @@ from django.apps import apps
 
 
 def safe_round(value, decimals=2):
-    if value != value or value in [float('inf'), float('-inf')]:
+    if not math.isfinite(value):
         return None
     return round(value, decimals)
 
@@ -28,8 +29,14 @@ def get_data_manager():
         return None, str(e)
 
 
-def fetch_historical_data(tickers, period='max'):
-    return yf.download(tickers, period=period, progress=False, group_by=tickers)
+def fetch_historical_data(tickers, start=None, end=None):
+    kwargs = {'progress': False, 'group_by': tickers}
+    if start and end:
+        kwargs['start'] = start.isoformat()
+        kwargs['end'] = end.isoformat()
+    else:
+        kwargs['period'] = 'max'
+    return yf.download(tickers, **kwargs)
 
 
 def date_range(start_date, end_date):

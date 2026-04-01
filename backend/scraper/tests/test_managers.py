@@ -19,8 +19,7 @@ class ScraperManagerTests(TestCase):
 
     @patch('scraper.managers.ScraperManager.TwitterScraper')
     @patch('scraper.managers.ScraperManager.Thread')
-    @patch('scraper.managers.ScraperManager.active_count', return_value=2)
-    def test_set_scraper_creates_and_starts_thread(self, mock_active, mock_thread_cls, mock_scraper_cls):
+    def test_set_scraper_creates_and_starts_thread(self, mock_thread_cls, mock_scraper_cls):
         mock_scraper = MagicMock()
         mock_scraper_cls.return_value = mock_scraper
         mock_thread = MagicMock()
@@ -33,8 +32,7 @@ class ScraperManagerTests(TestCase):
 
     @patch('scraper.managers.ScraperManager.TwitterScraper')
     @patch('scraper.managers.ScraperManager.Thread')
-    @patch('scraper.managers.ScraperManager.active_count', return_value=2)
-    def test_set_scraper_does_not_duplicate(self, mock_active, mock_thread_cls, mock_scraper_cls):
+    def test_set_scraper_does_not_duplicate(self, mock_thread_cls, mock_scraper_cls):
         mock_scraper_cls.return_value = MagicMock()
         mock_thread_cls.return_value = MagicMock()
 
@@ -45,22 +43,27 @@ class ScraperManagerTests(TestCase):
 
     @patch('scraper.managers.ScraperManager.TwitterScraper')
     @patch('scraper.managers.ScraperManager.Thread')
-    @patch('scraper.managers.ScraperManager.active_count')
-    def test_set_scraper_respects_thread_limit(self, mock_active, mock_thread_cls, mock_scraper_cls):
-        mock_active.return_value = self.manager.max_threads + 1
+    def test_set_scraper_respects_thread_limit(self, mock_thread_cls, mock_scraper_cls):
+        # Fill up with alive scraper threads to hit the limit
+        for i in range(self.manager.max_scraper_threads):
+            mock_thread = MagicMock()
+            mock_thread.is_alive.return_value = True
+            self.manager.scrapers[f'source_{i}'] = {'scraper': MagicMock(), 'thread': mock_thread}
+
         self.manager.set_scraper('twitter')
         self.assertNotIn('twitter', self.manager.scrapers)
 
-    def test_stop_scraper_removes_entry(self):
+    def test_stop_scraper_preserves_entry(self):
         mock_scraper = MagicMock()
         mock_thread = MagicMock()
         self.manager.scrapers['twitter'] = {'scraper': mock_scraper, 'thread': mock_thread}
 
         self.manager.stop_scraper('twitter')
 
-        self.assertNotIn('twitter', self.manager.scrapers)
+        self.assertIn('twitter', self.manager.scrapers)
+        self.assertIsNone(self.manager.scrapers['twitter']['thread'])
         mock_scraper.stop.assert_called_once()
-        mock_thread.join.assert_called_once_with(timeout=5)
+        mock_thread.join.assert_called_once_with(timeout=10)
 
     def test_stop_scraper_nonexistent_does_not_raise(self):
         self.manager.stop_scraper('nonexistent')

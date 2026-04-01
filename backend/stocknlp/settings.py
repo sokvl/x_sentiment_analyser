@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
@@ -17,9 +18,14 @@ load_dotenv(BASE_DIR / '.env')
 # Core
 # ---------------------------------------------------------------------------
 
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'unsafe-secret-key')
-
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes')
+
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'dev-only-insecure-key'
+    else:
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set in production')
 
 ALLOWED_HOSTS = (
     ['*']
@@ -196,7 +202,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ML model paths
 # ---------------------------------------------------------------------------
 
-MODEL_WEIGHTS_PATH   = BASE_DIR / 'models' / 'best_model.pth'
 MODEL_PARAMS_PATH    = BASE_DIR / 'models' / 'params' / 'best_params.json'
 WORD_TO_INDEX_PATH   = BASE_DIR / 'models' / 'word_to_index.json'
 TICKER_TO_INDEX_PATH = BASE_DIR / 'models' / 'ticker_to_index.json'
@@ -286,7 +291,6 @@ LOGGING = {
 # ---------------------------------------------------------------------------
 SECURE_SSL_REDIRECT = os.getenv('DJANGO_SSL_REDIRECT', 'False').lower() in ('1', 'true', 'yes')
 if not DEBUG:
-    
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True

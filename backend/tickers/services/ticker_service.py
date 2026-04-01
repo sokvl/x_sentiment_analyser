@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 import yfinance as yf
+from pandas import MultiIndex
 from django.conf import settings
 from rest_framework.exceptions import ValidationError, NotFound
 
@@ -53,8 +54,8 @@ class TickerService:
         except ValueError:
             raise ValidationError("Invalid date format. Use YYYY-MM-DD.")
 
-        # yfinance end is exclusive, so subtract one day from start to include it
-        return start - timedelta(days=1), end
+        # yfinance 'end' param is exclusive, so add one day to include it
+        return start, end + timedelta(days=1)
 
     def fetch_stock_data(self, symbols: list[str], start_date: date, end_date: date) -> dict:
         """
@@ -93,8 +94,8 @@ class TickerService:
         result = {}
         for symbol in symbols:
             try:
-                if len(symbols) > 1:
-                    data = raw[symbol] if symbol in raw.columns else pd.DataFrame()
+                if isinstance(raw.columns, MultiIndex):
+                    data = raw[symbol] if symbol in raw.columns.get_level_values(0) else pd.DataFrame()
                 else:
                     data = raw
 

@@ -23,11 +23,17 @@ class DataManager:
     def __init__(self, model_registry, default_model_id: str):
         self.registry = model_registry
         self.default_model_id = default_model_id
+        self._ticker_to_index: dict | None = None
 
     @staticmethod
     def _load_json(path: str) -> dict:
         with open(path, encoding='utf-8') as file:
             return json.load(file)
+
+    def _get_ticker_to_index(self) -> dict:
+        if self._ticker_to_index is None:
+            self._ticker_to_index = self._load_json(settings.TICKER_TO_INDEX_PATH)
+        return self._ticker_to_index
 
     def eval_sentiment(
         self,
@@ -50,8 +56,7 @@ class DataManager:
 
         try:
             if model_type == 'lstmcnn_model':
-                ticker_to_index = self._load_json(settings.TICKER_TO_INDEX_PATH)
-                ticker_index = ticker_to_index.get(ticker, 0)
+                ticker_index = self._get_ticker_to_index().get(ticker, 0)
                 prediction = model_manager.predict(
                     processed_input,
                     [ticker_index],
@@ -92,7 +97,11 @@ class DataManager:
 
         try:
             with transaction.atomic():
-                ticker, _ = Ticker.objects.get_or_create(symbol=data['ticker'])
+                symbol = data['ticker']
+                ticker, _ = Ticker.objects.get_or_create(
+                    symbol=symbol,
+                    defaults={'full_name': symbol, 'type': 'stock'},
+                )
                 content, _ = Content.objects.get_or_create(text=data['text'])
                 source, _ = Source.objects.get_or_create(name=data['source'])
                 post_meta, _ = PostMeta.objects.get_or_create(

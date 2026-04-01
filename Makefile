@@ -1,4 +1,3 @@
-# Zmienna dla powtarzającej się ścieżki (opcjonalnie, dla czystości kodu)
 COMPOSE = docker compose --env-file ./backend/.env
 
 up:
@@ -15,6 +14,10 @@ down:
 
 migrate:
 	$(COMPOSE) exec api python manage.py migrate
+
+migrations:
+	$(COMPOSE) exec api python manage.py makemigrations
+
 
 logs:
 	$(COMPOSE) logs -f

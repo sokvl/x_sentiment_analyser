@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import time
@@ -11,23 +12,14 @@ from django.apps import apps
 
 logger = logging.getLogger(__name__)
 
-# Lazily initialised so Django can import this module even if Redis is down
-_redis_client = None
 
-
+@functools.lru_cache(maxsize=1)
 def get_redis() -> redis.StrictRedis:
-    """Return a shared Redis client, creating it on first call."""
-    global _redis_client
-    if _redis_client is None:
-        from django.conf import settings
-        host = getattr(settings, 'REDIS_HOST', 'localhost')
-        port = int(getattr(settings, 'REDIS_PORT', 6379))
-        _redis_client = redis.StrictRedis(host=host, port=port, db=0)
-    return _redis_client
-
-
-def get_data_manager():
-    return apps.get_app_config('scraper').DATA_MANAGER
+    """Return a shared Redis client, created once on first call."""
+    from django.conf import settings
+    host = getattr(settings, 'REDIS_HOST', 'localhost')
+    port = int(getattr(settings, 'REDIS_PORT', 6379))
+    return redis.StrictRedis(host=host, port=port, db=0)
 
 
 def _serialize(obj):
@@ -72,7 +64,10 @@ def priority_worker() -> None:
     Includes exponential backoff on repeated errors to protect against
     Redis outages or consistently broken payloads.
     """
+    from django.conf import settings
+
     client = get_redis()
+    data_manager = apps.get_app_config('scraper').DATA_MANAGER
     backoff = 1  # seconds; doubles on each consecutive error, resets on success
 
     logger.info("LLM worker started. Listening on user_queue → scraper_queue …")
@@ -84,12 +79,10 @@ def priority_worker() -> None:
             result = client.blpop(['user_queue', 'scraper_queue'], timeout=5)
 
             if result is None:
-                # timeout expired, nothing arrived — just loop again
                 continue
 
             queue_name, raw = result
             data = json.loads(raw)
-            data_manager = get_data_manager()
 
             if queue_name == b'user_queue':
                 request_id = data['request_id']
@@ -98,13 +91,11 @@ def priority_worker() -> None:
                 sentiment_result = data_manager.eval_sentiment(
                     data, with_save=False, model_id=model_id,
                 )
-                # Push result to a per-request response key with configurable TTL
-                from django.conf import settings
                 client.rpush(f'response_queue:{request_id}', json.dumps(sentiment_result, default=_serialize))
                 client.expire(f'response_queue:{request_id}', settings.CACHE_TTL_WORKER_RESULT)
             else:
                 model_id = data.get('model_id')
-                logger.debug("Processing scraper post for ticker %s (model=%s)", data.get('ticker'), model_id)
+                logger.debug("Processing scraper post for ticker %s (model=%s)", data.get('ticker'), model_id or 'default')
                 data_manager.eval_sentiment(data, with_save=True, model_id=model_id)
 
             backoff = 1  # reset after a successful cycle
@@ -112,7 +103,7 @@ def priority_worker() -> None:
         except redis.RedisError as e:
             logger.error("Redis error: %s — retrying in %ss", e, backoff)
             time.sleep(backoff)
-            backoff = min(backoff * 2, 60)  # cap at 60 s
+            backoff = min(backoff * 2, 60)
 
         except Exception as e:
             logger.exception("Unexpected worker error: %s — retrying in %ss", e, backoff)

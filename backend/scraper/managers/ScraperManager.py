@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-from threading import active_count
 from threading import Lock
 from threading import Thread
 
@@ -14,8 +13,7 @@ class ScraperManager:
         self.logger = logging.getLogger(__name__)
         self.scrapers = {}
         self.lock = Lock()
-        # Maksymalna liczba wątków zgodnie z liczbą dostępnych rdzeni procesora
-        self.max_threads = os.cpu_count() or 4
+        self.max_scraper_threads = os.cpu_count() or 4
 
 
 
@@ -54,10 +52,14 @@ class ScraperManager:
                 self._start_thread(source, scraper_instance)
                 return
 
-            if active_count() >= self.max_threads:
+            active_scrapers = sum(
+                1 for s in self.scrapers.values()
+                if s.get('thread') and s['thread'].is_alive()
+            )
+            if active_scrapers >= self.max_scraper_threads:
                 self.logger.error(
-                    'Cannot start new scraper. Maximum thread limit of %s reached.',
-                    self.max_threads,
+                    'Cannot start new scraper. %s of %s scraper threads active.',
+                    active_scrapers, self.max_scraper_threads,
                 )
                 return
 
@@ -80,8 +82,7 @@ class ScraperManager:
             scraper_instance = scraper_data['scraper']
 
             self.logger.info('Stopping scraper for source: %s...', source)
-            if scraper_instance and hasattr(scraper_instance, 'stop'):
-                scraper_instance.stop()
+            scraper_instance.stop()
             thread = scraper_data.get('thread')
             if thread:
                 thread.join(timeout=10)
@@ -99,16 +100,13 @@ class ScraperManager:
                 return
             scraper_data = self.scrapers[source]
             scraper_instance = scraper_data['scraper']
-            if scraper_instance and hasattr(scraper_instance, 'stop'):
-                scraper_instance.stop()
+            scraper_instance.stop()
             thread = scraper_data.get('thread')
             if thread:
                 thread.join(timeout=10)
-            # Quit the browser
-            instance = getattr(scraper_instance, 'instance', None)
-            if instance:
+            if hasattr(scraper_instance, 'instance') and scraper_instance.instance:
                 try:
-                    instance.quit()
+                    scraper_instance.instance.quit()
                 except Exception:
                     pass
             del self.scrapers[source]

@@ -1,4 +1,5 @@
 import datetime
+import pandas as pd
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -54,13 +55,15 @@ class PredictionReportView(APIView):
             ticker_total = 0
             daily_results = {}
 
-            stock_data = fetch_historical_data(ticker.symbol.lstrip('$'))
+            stock_data = fetch_historical_data(
+                ticker.symbol.lstrip('$'),
+                start=start_date - datetime.timedelta(days=1),
+                end=end_date + datetime.timedelta(days=1),
+            )
             if stock_data is None or (hasattr(stock_data, 'empty') and stock_data.empty):
                 report[symbol_key] = {'error': 'No stock data available.'}
                 continue
-            
-            # Handle MultiIndex if necessary (standard yfinance output for multiple symbols)
-            import pandas as pd
+
             if isinstance(stock_data.columns, pd.MultiIndex):
                 symbol = ticker.symbol.lstrip('$')
                 if symbol in stock_data.columns.levels[0]:

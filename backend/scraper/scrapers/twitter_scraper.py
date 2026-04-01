@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import queue
 import time
@@ -26,6 +27,9 @@ from ..scraper import ScraperStates
 ### INTERNAL IMPORTS ###
 
 load_dotenv()
+
+logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
 
 class TwitterScraper(Scraper):
@@ -125,26 +129,24 @@ class TwitterScraper(Scraper):
             self.config = fallback
 
     def _gen_dates_pipeline(self) -> queue.Queue:
+        """Generate dates from newest (end_date) to oldest (start_date)."""
         dates_pipeline: queue.Queue = queue.Queue()
-        start = datetime.strptime(
-            self.config['twitter_query']['start_date'], '%Y-%m-%d',
-        )
-        end = datetime.strptime(
+        newest = datetime.strptime(
             self.config['twitter_query']['end_date'], '%Y-%m-%d',
         )
+        oldest = datetime.strptime(
+            self.config['twitter_query']['start_date'], '%Y-%m-%d',
+        )
 
-        while start <= end:
-            dates_pipeline.put(
-                start.strftime('%Y-%m-%d'),
-            )
-            start -= timedelta(days=1)
+        current = newest
+        while current >= oldest:
+            dates_pipeline.put(current.strftime('%Y-%m-%d'))
+            current -= timedelta(days=1)
 
         return dates_pipeline
 
     def get_scraper_config(self, config_id: int) -> dict:
-        """
-        Pobiera `config_string` dla podanego `config_id`.
-        """
+        """Return the config_string for the given config_id."""
         try:
             Config = apps.get_model('scraper', 'Config')
             config_obj = Config.objects.get(pk=config_id)
@@ -179,15 +181,18 @@ class TwitterScraper(Scraper):
                 'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
             )
 
+            scraper_mode = os.getenv('SCRAPER_MODE', 'grid')
             grid_url = getattr(django_settings, 'SELENIUM_GRID_URL', None)
-            if grid_url:
+
+            if scraper_mode == 'local' or not grid_url:
+                self.instance = webdriver.Chrome(options=chrome_options)
+                self._log(LogTypes.MESSAGE, 'Using local Chrome browser.')
+            else:
                 self.instance = webdriver.Remote(
                     command_executor=grid_url,
                     options=chrome_options,
                 )
                 self._log(LogTypes.MESSAGE, f'Connected to Selenium Grid at {grid_url}')
-            else:
-                self.instance = webdriver.Chrome(options=chrome_options)
 
             # Remove navigator.webdriver flag via CDP
             self.instance.execute_script(
@@ -206,11 +211,6 @@ class TwitterScraper(Scraper):
             return False
 
     def _enter_identifier(self, value: str, label: str, max_retries: int = 5) -> bool:
-        """
-        Type *value* into the active name='text' field and press Enter.
-        If X.com responds with 'Try again later', waits and retries.
-        Returns True on success, False if all retries are exhausted.
-        """
         for attempt in range(1, max_retries + 1):
             try:
                 field = WebDriverWait(self.instance, 15).until(
@@ -236,20 +236,8 @@ class TwitterScraper(Scraper):
         return False
 
     def _enter_credentials(self) -> None:
-        """
-        X.com multi-step login — content-driven, with retry on rate-limit errors.
-
-        After each submission we inspect the page to decide the next step:
-          - password field visible  → proceed to password
-          - another text field      → X wants email/phone verification
-          - 'Try again later'       → wait and retry (handled inside _enter_identifier)
-
-        If the username attempt fails we fall back to using the email address
-        as the identifier, since X sometimes accepts either.
-        """
         creds = self.config['credentials']
 
-        # Step 1: try username first, fall back to email if it keeps failing
         identifier_sent = self._enter_identifier(creds['username'], 'username')
         if not identifier_sent:
             self._log(LogTypes.WARNING, 'Username failed — retrying with email as identifier.')
@@ -257,12 +245,9 @@ class TwitterScraper(Scraper):
         if not identifier_sent:
             raise RuntimeError('Could not submit identifier — X.com keeps rate-limiting.')
 
-        # Step 2: inspect what X rendered next
         try:
             self.instance.find_element(By.NAME, 'password')
-            # Password field is already there — skip verification step
         except Exception:
-            # No password yet → check for a second text field (email/phone verification)
             try:
                 WebDriverWait(self.instance, 8).until(
                     EC.presence_of_element_located((By.NAME, 'text')),
@@ -275,36 +260,30 @@ class TwitterScraper(Scraper):
                 # Could be the password field appearing late — let Step 3 handle it
                 self._log(LogTypes.MESSAGE, f'Step-2 probe: {inner}')
 
-        # Step 3: password
         password_input = WebDriverWait(self.instance, 15).until(
             EC.presence_of_element_located((By.NAME, 'password')),
         )
         password_input.send_keys(creds['password'])
         password_input.send_keys(Keys.RETURN)
 
-    def _generate_twitter_query(self, ticker: str, start_date: str | None = None, end_date: str | None = None) -> list[str]:
+    def _generate_twitter_query(self, ticker: str, since_date: str, until_date: str) -> list[str]:
         try:
             qp = self.config['twitter_query']['params']
             filters = ' '.join(
                 [f"-filter:{f}" for f in qp['filter']],
             )
-            query = ticker
-            query += f" lang:{qp['lang']} since:{self.config['twitter_query']['start_date']} until:{self.config['twitter_query']['end_date']} {filters}"
+            query = f"{ticker} lang:{qp['lang']} since:{since_date} until:{until_date} {filters}"
             return [query]
         except Exception as e:
             self._log(LogTypes.ERROR, f'Failed to generate query for {ticker}: {e}')
             return []
 
     def _is_logged_in(self) -> bool:
-        """Return True if the browser session is alive and already authenticated."""
+        """Check if browser has an active session — no navigation, just inspect state."""
         try:
             if not getattr(self, 'instance', None):
                 return False
-            # Check browser is still responsive
             _ = self.instance.window_handles
-            # Navigate to home — X redirects to /login if not authenticated
-            self.instance.get('https://x.com/home')
-            time.sleep(3)
             logged_in = 'x.com/home' in self.instance.current_url
             if logged_in:
                 self._log(LogTypes.MESSAGE, 'Existing session detected — skipping login.')
@@ -313,7 +292,6 @@ class TwitterScraper(Scraper):
             return False
 
     def _accept_cookies(self) -> None:
-        """Accept cookie consent dialog if it appears."""
         try:
             accept_btn = WebDriverWait(self.instance, 8).until(
                 EC.element_to_be_clickable(
@@ -324,15 +302,35 @@ class TwitterScraper(Scraper):
             self._log(LogTypes.MESSAGE, 'Cookie consent accepted.')
             time.sleep(2)
         except Exception:
-            # No cookie banner — that's fine
             self._log(LogTypes.MESSAGE, 'No cookie banner found, continuing.')
 
     def _login_twitter(self) -> None:
+        login_mode = os.getenv('LOGIN_MODE', 'auto')
+
+        # Step 1: go to x.com, accept cookies
+        self.instance.get('https://x.com')
+        time.sleep(3)
+        self._accept_cookies()
+
+        if login_mode == 'manual':
+            # Navigate to login page and wait for user
+            self.instance.get('https://x.com/i/flow/login')
+            self._log(
+                LogTypes.MESSAGE,
+                'Manual login mode — please log in via the browser. Waiting...',
+            )
+            while not self.stop_event.is_set():
+                time.sleep(5)
+                try:
+                    if 'x.com/home' in self.instance.current_url:
+                        self._log(LogTypes.MESSAGE, 'Manual login detected.')
+                        return
+                except Exception:
+                    pass
+            raise RuntimeError('Scraper stopped while waiting for manual login.')
+
+        # Auto mode
         try:
-            # Visit homepage first to establish cookies / appear more natural
-            self.instance.get('https://x.com')
-            time.sleep(3)
-            self._accept_cookies()
             self.instance.get('https://x.com/i/flow/login')
             time.sleep(3)
             self._enter_credentials()
@@ -384,6 +382,108 @@ class TwitterScraper(Scraper):
         return {'likes': likes, 'retweets': retweets, 'replies': replies, 'views': views}
 
 
+    def _parse_tweet(self, tweet_html, ticker: str) -> dict | None:
+        """Extract text, date, and metadata from a single tweet article element.
+
+        Returns a ready-to-enqueue dict, or None if the tweet should be skipped.
+        """
+        text_div = tweet_html.find('div', {'lang': 'en'})
+        text = text_div.get_text(strip=True) if text_div else None
+        time_el = tweet_html.find('time')
+        date_str = time_el['datetime'] if time_el else None
+
+        if not text or not date_str:
+            self._log(LogTypes.WARNING, 'Skipping tweet due to missing text or date.')
+            return None
+
+        tweet_data = self._extract_tweet_metadata(str(tweet_html))
+        tweet_data['ticker'] = ticker
+        tweet_data['date'] = datetime.fromisoformat(date_str[:-1]).date()
+        tweet_data['text'] = text
+        tweet_data['source'] = self.config['source'][0]['name']
+        return tweet_data
+
+    def _scroll_and_collect(self, ticker: str) -> int:
+        """Scroll the current search results page, parse tweets, and enqueue them.
+
+        Returns the number of tweets collected.
+        """
+        count = 0
+        seen: set[tuple[str, str]] = set()
+        last_height = self.instance.execute_script('return document.body.scrollHeight')
+
+        while True:
+            if self.stop_event.is_set():
+                break
+
+            self.instance.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+            time.sleep(5)
+            new_height = self.instance.execute_script('return document.body.scrollHeight')
+
+            if new_height == last_height:
+                try:
+                    latest_button = self.instance.find_element(
+                        By.XPATH, "//span[text()='Latest']",
+                    )
+                    latest_button.click()
+                    time.sleep(2)
+                except Exception:
+                    break
+
+            last_height = new_height
+            page_source = self.instance.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+            articles = soup.find_all('article', {'data-testid': 'tweet'})
+
+            for article in articles:
+                try:
+                    tweet_data = self._parse_tweet(article, ticker)
+                    if tweet_data is None:
+                        continue
+
+                    fingerprint = (tweet_data['text'], str(tweet_data['date']))
+                    if fingerprint in seen:
+                        continue
+                    seen.add(fingerprint)
+
+                    enqueue_scraper_data(tweet_data)
+                    count += 1
+                    self._update_task({'count': count})
+                except KeyError as e:
+                    self._log(LogTypes.ERROR, f'Missing key while processing tweet: {e}')
+                except ValueError as e:
+                    self._log(LogTypes.ERROR, f'Value error processing tweet: {e}')
+                except Exception as e:
+                    self._log(LogTypes.ERROR, f'Unexpected error processing tweet: {e}')
+
+        return count
+
+    def _scrape_ticker(self, ticker: str, since_date: str, until_date: str) -> int:
+        """Search for a single ticker on a single day and collect all tweets.
+
+        Returns the number of tweets found.
+        """
+        queries = self._generate_twitter_query(
+            ticker=ticker, since_date=since_date, until_date=until_date,
+        )
+        if not queries:
+            self._log(LogTypes.ERROR, f'No query generated for {ticker}, skipping.')
+            return 0
+
+        url = self.config['source'][0]['base_url'] + quote_plus(queries[0])
+        self.instance.get(url)
+        WebDriverWait(self.instance, 10).until(
+            lambda d: d.execute_script('return document.readyState') == 'complete',
+        )
+
+        return self._scroll_and_collect(ticker)
+
+    def _wait_if_paused(self) -> bool:
+        """Block while paused. Returns False if stop was requested during the wait."""
+        while self.pause_event.is_set() and not self.stop_event.is_set():
+            time.sleep(1)
+        return not self.stop_event.is_set()
+
     def run_procedure(self, crawling_mode=True):
         self.load_config()
         self._setup_instances()
@@ -391,142 +491,47 @@ class TwitterScraper(Scraper):
             self._login_twitter()
         self._set_status(ScraperStates.RUNNING)
 
-        last_task = None
-
         while not self.stop_event.is_set():
-            if self.pause_event.is_set():
-                time.sleep(1)
-                continue
+            if not self._wait_if_paused():
+                break
 
             if crawling_mode and self.state == ScraperStates.RUNNING:
-                time.sleep(self.config['crawl_interval'])
-
+                dates_pipeline = self._gen_dates_pipeline()
                 tickers_list = self.config['twitter_query']['params']['ticker']
 
-                if last_task and 'ticker' in last_task:
-                    if last_task['ticker'] in tickers_list:
-                        start_index = tickers_list.index(last_task['ticker'])
-                        tickers_list = tickers_list[start_index:]
+                while not dates_pipeline.empty() and not self.stop_event.is_set():
+                    current_date = dates_pipeline.get()
+                    next_date = (
+                        datetime.strptime(current_date, '%Y-%m-%d') + timedelta(days=1)
+                    ).strftime('%Y-%m-%d')
 
-                for ticker in tickers_list:
+                    self._log(LogTypes.MESSAGE, f'Scraping date: {current_date}')
 
-                    last_task = {
-                        'source': self.config['source'][0]['name'],
-                        'ticker': ticker,
-                        'count': 0,
-                    }
-                    self._update_task(last_task, overwrite=True)
-
-                    if self.state != ScraperStates.RUNNING:
-
-                        while self.state not in [ScraperStates.RUNNING, ScraperStates.STOPPED]:
-                            time.sleep(1)
-
-                        if last_task:
-                            self._update_task(last_task, overwrite=True)
-                    count = 0
-                    queries = self._generate_twitter_query(ticker=ticker)
-                    if not queries:
-                        self._log(LogTypes.ERROR, f'No query generated for {ticker}, skipping.')
-                        continue
-                    query = queries[0]
-                    url = self.config['source'][0]['base_url'] + \
-                        quote_plus(query)
-                    self.instance.get(url)
-                    WebDriverWait(self.instance, 10).until(
-                        lambda d: d.execute_script(
-                            'return document.readyState',
-                        ) == 'complete',
-                    )
-
-                    last_height = self.instance.execute_script(
-                        'return document.body.scrollHeight',
-                    )
-
-                    while True:
-                        if self.state == ScraperStates.STOPPED:
+                    for ticker in tickers_list:
+                        if self.stop_event.is_set():
+                            break
+                        if not self._wait_if_paused():
                             break
 
-                        self.instance.execute_script(
-                            'window.scrollTo(0, document.body.scrollHeight);',
-                        )
-                        time.sleep(5)
-                        new_height = self.instance.execute_script(
-                            'return document.body.scrollHeight',
-                        )
+                        self._update_task({
+                            'source': self.config['source'][0]['name'],
+                            'date': current_date,
+                            'ticker': ticker,
+                            'count': 0,
+                        }, overwrite=True)
 
-                        if new_height == last_height:
-                            try:
-                                latest_button = self.instance.find_element(
-                                    By.XPATH, "//span[text()='Latest']",
-                                )
-                                latest_button.click()
-                                time.sleep(2)
-                            except Exception as e:
-                                break
-
-                        last_height = new_height
-                        page_source = self.instance.page_source
-                        soup = BeautifulSoup(page_source, 'html.parser')
-                        tweets = soup.find_all(
-                            'article', {'data-testid': 'tweet'},
+                        count = self._scrape_ticker(ticker, current_date, next_date)
+                        self._log(
+                            LogTypes.MESSAGE,
+                            f"Found {count} tweets for '{ticker}' on {current_date}",
                         )
 
-                        for tweet in tweets:
-                            try:
-                                text = tweet.find('div', {'lang': 'en'}).get_text(
-                                    strip=True,
-                                ) if tweet.find('div', {'lang': 'en'}) else None
-                                date = tweet.find('time')['datetime'] if tweet.find(
-                                    'time',
-                                ) else None
-
-                                if not text or not date:
-                                    self._log(LogTypes.WARNING, 'Skipping tweet due to missing text or date.')
-                                    continue
-
-                                tweet_data = self._extract_tweet_metadata(
-                                    str(tweet),
-                                )
-
-                                tweet_data['ticker'] = '$' + ticker
-                                tweet_data['date'] = datetime.fromisoformat(
-                                    date[:-1],
-                                ).date()
-                                # Rename scraper field names to match data pipeline keys
-                                tweet_data['shares'] = tweet_data.pop('retweets', None)
-                                tweet_data['comments'] = tweet_data.pop('replies', None)
-                                tweet_data['text'] = text
-                                tweet_data['source_name'] = self.config['source'][0]['name']
-
-                                enqueue_scraper_data(tweet_data)
-                                count += 1
-                                self._update_task({'count': count})
-                            except KeyError as e:
-                                self._log(LogTypes.ERROR, f'Missing key while processing tweet: {e}')
-                            except ValueError as e:
-                                self._log(LogTypes.ERROR, f'Value error processing tweet: {e}')
-                            except Exception as e:
-                                self._log(LogTypes.ERROR, f'Unexpected error processing tweet: {e}')
-
-                    self._log(
-                        LogTypes.MESSAGE,
-                        f"Found {count} tweets $'{ticker}'",
-                    )
-
-                    if self.state != ScraperStates.RUNNING:
-                        while self.state not in [ScraperStates.RUNNING, ScraperStates.STOPPED]:
-                            time.sleep(1)
-                        if self.state == ScraperStates.STOPPED:
-                            break
-                        if last_task:
-                            self._update_task(last_task, overwrite=True)
+                # All dates exhausted — wait before next crawl cycle
+                time.sleep(self.config['crawl_interval'])
 
             else:
-                pass
+                time.sleep(1)
 
-        # Browser session is preserved so it can be reused on restart.
-        # Call destroy_scraper() on the manager when a clean slate is needed.
         self._log(LogTypes.MESSAGE, 'Scraper stopped. Browser session preserved.')
 
     ## GETTERS ###

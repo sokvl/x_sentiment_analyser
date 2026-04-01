@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 
 from django.test import TestCase
 
@@ -50,6 +50,10 @@ class ResolveTickersTests(TestCase):
 
 
 class CalculateSentimentScoreTests(TestCase):
+    """
+    Scoring: score_per_post = -1 * P(neg) + -0.01 * P(neutral) + 1 * P(pos)
+    Final score = average across posts, rounded to 2 decimals.
+    """
     def setUp(self):
         self.service = SignalService()
 
@@ -63,32 +67,33 @@ class CalculateSentimentScoreTests(TestCase):
         self.assertEqual(self.service.calculate_sentiment_score([]), 0.0)
 
     def test_positive_prediction_returns_positive_score(self):
+        # -1*0.1 + -0.01*0.2 + 1*0.7 = 0.598 → 0.6
         post = self._make_post(2, [0.1, 0.2, 0.7])
         score = self.service.calculate_sentiment_score([post])
         self.assertGreater(score, 0)
-        self.assertEqual(score, 1.0)
+        self.assertAlmostEqual(score, 0.6, places=2)
 
     def test_negative_prediction_returns_negative_score(self):
+        # -1*0.8 + -0.01*0.1 + 1*0.1 = -0.701 → -0.7
         post = self._make_post(0, [0.8, 0.1, 0.1])
         score = self.service.calculate_sentiment_score([post])
         self.assertLess(score, 0)
-        self.assertEqual(score, -1.0)
+        self.assertAlmostEqual(score, -0.7, places=2)
 
-    def test_neutral_prediction_contributes_nothing(self):
+    def test_neutral_prediction_contributes_slightly_negative(self):
+        # -1*0.2 + -0.01*0.6 + 1*0.2 = -0.006 → -0.01
         post = self._make_post(1, [0.2, 0.6, 0.2])
         score = self.service.calculate_sentiment_score([post])
-        self.assertEqual(score, 0.0)
+        self.assertAlmostEqual(score, -0.01, places=2)
 
     def test_mixed_predictions(self):
         posts = [
-            self._make_post(2, [0.1, 0.2, 0.7]),
-            self._make_post(0, [0.6, 0.2, 0.2]),
+            self._make_post(2, [0.1, 0.2, 0.7]),   # 0.598
+            self._make_post(0, [0.6, 0.2, 0.2]),    # -0.402
         ]
+        # avg = (0.598 + -0.402) / 2 = 0.098 → 0.1
         score = self.service.calculate_sentiment_score(posts)
-        # weighted_sum = 1.0 * 0.7 + (-1.0 * 0.6) = 0.1
-        # total_weight = 0.7 + 0.6 = 1.3
-        # score = 0.1 / 1.3 ≈ 0.08
-        self.assertAlmostEqual(score, 0.08, places=2)
+        self.assertAlmostEqual(score, 0.1, places=2)
 
     def test_skips_posts_with_insufficient_probabilities(self):
         post = self._make_post(2, [0.5])
@@ -106,26 +111,22 @@ class ComputeBatchScoreTests(TestCase):
         self.service = SignalService()
 
     def test_basic_batch_score(self):
-        sentiments = [0, 2]
         probabilities = [[0.7, 0.2, 0.1], [0.1, 0.2, 0.7]]
         weights = [-1, -0.01, 1]
-        score = self.service.compute_batch_score(sentiments, probabilities, weights)
+        score = self.service.compute_batch_score(probabilities, weights)
         # Row 0: -1*0.7 + -0.01*0.2 + 1*0.1 = -0.602
         # Row 1: -1*0.1 + -0.01*0.2 + 1*0.7 = 0.598
-        # weighted_score = -0.602 + 0.598 = -0.004
-        # total_weight = 1.0 + 1.0 = 2.0
-        # final = -0.004 / 2.0 = -0.002 → rounded to 0.0
+        # avg = (-0.602 + 0.598) / 2 = -0.002 → 0.0
         self.assertAlmostEqual(score, 0.0, places=2)
 
     def test_returns_zero_for_empty_input(self):
-        score = self.service.compute_batch_score([], [], [-1, 0, 1])
+        score = self.service.compute_batch_score([], [-1, 0, 1])
         self.assertEqual(score, 0.0)
 
     def test_skips_mismatched_probability_lengths(self):
-        sentiments = [0]
         probabilities = [[0.5, 0.5]]  # length 2, weights length 3
         weights = [-1, 0, 1]
-        score = self.service.compute_batch_score(sentiments, probabilities, weights)
+        score = self.service.compute_batch_score(probabilities, weights)
         self.assertEqual(score, 0.0)
 
 

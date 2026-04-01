@@ -105,10 +105,22 @@ class StockDataViewTests(TestCase):
         self.assertIn('AAPL', response.data)
 
     @patch('tickers.views.stock_data.TickerService')
-    def test_bad_request_on_value_error(self, mock_service_cls):
+    def test_not_found_returns_404(self, mock_service_cls):
+        from rest_framework.exceptions import NotFound
         mock_service = mock_service_cls.return_value
-        mock_service.resolve_tickers.side_effect = ValueError("Invalid")
+        mock_service.resolve_tickers.side_effect = NotFound("No valid tickers")
 
         request = self.factory.get('/api/tickers/stock-data/')
+        response = self.view(request)
+        self.assertEqual(response.status_code, 404)
+
+    @patch('tickers.views.stock_data.TickerService')
+    def test_validation_error_returns_400(self, mock_service_cls):
+        from rest_framework.exceptions import ValidationError
+        mock_service = mock_service_cls.return_value
+        mock_service.resolve_tickers.return_value = (['AAPL'], MagicMock())
+        mock_service.parse_date_range.side_effect = ValidationError("Invalid date format")
+
+        request = self.factory.get('/api/tickers/stock-data/', {'tickers': 'AAPL', 'start_date': 'bad'})
         response = self.view(request)
         self.assertEqual(response.status_code, 400)

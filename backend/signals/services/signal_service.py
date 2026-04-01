@@ -1,11 +1,10 @@
 import logging
-from typing import List, Union, Any
+from typing import List, Any
 from django.apps import apps
 from django.db.models import QuerySet
 from ..models import Signal
 from ..constants import (
-    BUY_THRESHOLD, SELL_THRESHOLD,
-    PREDICTION_NEGATIVE_WEIGHT, PREDICTION_POSITIVE_WEIGHT
+    BUY_THRESHOLD, SELL_THRESHOLD, SENTIMENT_WEIGHTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,9 +21,9 @@ class SignalService:
         Ticker = apps.get_model('tickers', 'Ticker')
         if tickers_param.lower() == 'all':
             return list(Ticker.objects.all())
-        
-        symbols = [s.strip().upper() for s in tickers_param.split(',')]
-        
+
+        symbols = [s.strip().strip('$').upper() for s in tickers_param.split(',')]
+
         tickers = list(Ticker.objects.filter(symbol__in=symbols))
         if not tickers:
             raise ValueError(f"No tickers found for symbols: {tickers_param}")
@@ -41,61 +40,53 @@ class SignalService:
             time_stamp__date__range=[start_date, end_date]
         ).select_related('post_prediction')
 
-    def calculate_sentiment_score(self, posts: Union[List[Any], QuerySet], weights: Union[List[float], None] = None) -> float:
+    def calculate_sentiment_score(self, posts) -> float:
         """
-        Calculates a weighted sentiment score using probabilities from post_prediction.
-        Following the user's provided logic:
-        Sum(weight * probability) / total_weight
+        Calculates a weighted sentiment score using the full probability
+        distribution from each post's prediction.
+
+        Score per post = sum(weight * probability) for all classes.
+        Final score = average across posts.
         """
         if not posts:
             return 0.0
-        
-        weighted_sum = 0.0
-        total_weight = 0.0
-        
-        for post in posts:
-            pred = post.post_prediction.prediction
-            probs = post.post_prediction.probabilities
-            
-            if not probs or len(probs) < 3:
-                continue
-                
-            w0 = probs[0] # Neg
-            w2 = probs[2] # Pos
-            
-            if pred == 0:
-                weighted_sum += -1.0 * float(w0)
-                total_weight += float(w0)
-            elif pred == 2:
-                weighted_sum += 1.0 * float(w2)
-                total_weight += float(w2)
-                
-        if total_weight == 0:
-            return 0.0
-            
-        score = weighted_sum / total_weight
-        return round(score, 2)
 
-    def compute_batch_score(self, sentiments: List[int], probabilities: List[List[float]], weights: List[float]) -> float:
+        total_score = 0.0
+        count = 0
+
+        for post in posts:
+            probs = post.post_prediction.probabilities
+
+            if not probs or len(probs) < len(SENTIMENT_WEIGHTS):
+                continue
+
+            total_score += sum(w * float(p) for w, p in zip(SENTIMENT_WEIGHTS, probs))
+            count += 1
+
+        if count == 0:
+            return 0.0
+
+        return round(total_score / count, 2)
+
+    def compute_batch_score(self, probabilities: List[List[float]], weights: List[float]) -> float:
         """
         Calculates a weighted score for a batch of predictions (e.g. from CSV).
-        Logic: sum(w * p for w, p in zip(weights, prob)) / sum(probabilities)
+        Score per row = sum(w * p for w, p in zip(weights, prob)).
+        Final score = average across rows.
         """
-        weighted_score = 0.0
-        total_weight = 0.0
-        
-        for sent, prob in zip(sentiments, probabilities):
+        total_score = 0.0
+        count = 0
+
+        for prob in probabilities:
             if not prob or len(prob) != len(weights):
                 continue
-            
-            score = sum(w * p for w, p in zip(weights, prob))
-            weighted_score += float(score)
-            total_weight += float(sum(prob))
-            
-        if total_weight > 0:
-            final_score = weighted_score / total_weight
-            return round(final_score, 2)
-        return 0.0
+
+            total_score += sum(w * float(p) for w, p in zip(weights, prob))
+            count += 1
+
+        if count == 0:
+            return 0.0
+        return round(total_score / count, 2)
 
     def determine_signal_type(self, score: float) -> str:
         """
@@ -123,7 +114,7 @@ class SignalService:
             posts = self.get_posts_in_range(ticker, start_date, end_date)
             score = self.calculate_sentiment_score(posts)
             signal_type = self.determine_signal_type(score)
-            
+
             signal_data = {
                 'ticker': ticker.symbol,
                 'signal_type': signal_type,
@@ -131,17 +122,16 @@ class SignalService:
                 'tweet_count': posts.count(),
                 'date': end_date.isoformat()
             }
-            
+
             if with_save:
-                # Save to database
                 Signal.objects.create(
                     signal_type=signal_type,
-                    ticker_id=ticker,
+                    ticker=ticker,
                     confidence_score=score,
                     used_model=used_model,
-                    config_ig=config
+                    config=config,
                 )
-            
+
             results[ticker.symbol] = signal_data
-            
+
         return results

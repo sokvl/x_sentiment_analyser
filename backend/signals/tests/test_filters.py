@@ -21,12 +21,12 @@ class SignalFilterTests(TestCase):
             config_string={'user_config': {}, 'scrapers_config': []},
         )
         self.signal1 = Signal.objects.create(
-            signal_type='BUY', ticker_id=self.ticker,
-            confidence_score=0.5, used_model='test', config_ig=self.config,
+            signal_type='BUY', ticker=self.ticker,
+            confidence_score=0.5, used_model='test', config=self.config,
         )
         self.signal2 = Signal.objects.create(
-            signal_type='SELL', ticker_id=self.ticker2,
-            confidence_score=-0.3, used_model='test', config_ig=self.config,
+            signal_type='SELL', ticker=self.ticker2,
+            confidence_score=-0.3, used_model='test', config=self.config,
         )
 
     def test_filter_by_ticker_id(self):

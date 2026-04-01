@@ -50,12 +50,9 @@ class ModelManager:
         )
         return self
 
-    def save_model(self, save_path: str | Path | None = None) -> None:
+    def save_model(self, save_path: str | Path) -> None:
         if self.model is None:
-            logger.error('Model is not initialized. Cannot save.')
             raise ValueError('Model is not initialized. Cannot save.')
-        if save_path is None:
-            save_path = settings.MODEL_WEIGHTS_PATH
 
         save_path = Path(save_path)
         try:
@@ -91,13 +88,6 @@ class ModelManager:
         return self.model
 
     def get_device(self) -> torch.device:
-        if self.model is None:
-            logger.error(
-                'Device not available because model is not initialized.',
-            )
-            raise ValueError(
-                'Device not available because model is not initialized.',
-            )
         return self.device
 
     def set_device(self, device: torch.device) -> None:

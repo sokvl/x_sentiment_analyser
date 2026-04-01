@@ -35,12 +35,6 @@ class ScraperServiceTests(TestCase):
         with self.assertRaises(ValueError):
             self.service.pause('unknown')
 
-    def test_pause_failed_raises_runtime_error(self):
-        self.mock_manager.get_scraper.return_value = MagicMock()
-        self.mock_manager.access_scraper.return_value = None
-        with self.assertRaises(RuntimeError):
-            self.service.pause('twitter')
-
     def test_resume_success(self):
         self.mock_manager.get_scraper.return_value = MagicMock()
         self.mock_manager.access_scraper.return_value = True

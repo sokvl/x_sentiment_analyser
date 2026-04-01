@@ -4,7 +4,7 @@ class Ticker(models.Model):
     ticker_id = models.AutoField(primary_key=True)
     type = models.CharField(max_length=32, db_index=True)
     symbol = models.CharField(max_length=8, unique=True, db_index=True)
-    full_name = models.CharField(max_length=128, unique=True)
+    full_name = models.CharField(max_length=128)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

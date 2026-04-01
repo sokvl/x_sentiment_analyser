@@ -21,9 +21,9 @@ class ScraperConfig(AppConfig):
             model_configs = json.load(file)
 
         # --- Model Registry (lazy-loads models on first use) ---
-        try:
-            from .managers.model_registry import ModelRegistry
+        from .managers.model_registry import ModelRegistry
 
+        try:
             logger.debug('Initializing MODEL_REGISTRY...')
             self.MODEL_REGISTRY = ModelRegistry(model_configs)
             logger.info(
@@ -33,11 +33,12 @@ class ScraperConfig(AppConfig):
             )
         except Exception:
             logger.exception('Failed to initialize MODEL_REGISTRY')
+            raise
 
         # --- DataManager (uses the registry for model resolution) ---
-        try:
-            from .managers.data_manager.data_manager import DataManager
+        from .managers.data_manager.data_manager import DataManager
 
+        try:
             logger.debug('Initializing DATA_MANAGER...')
             self.DATA_MANAGER = DataManager(
                 model_registry=self.MODEL_REGISTRY,
@@ -46,16 +47,18 @@ class ScraperConfig(AppConfig):
             logger.debug('DATA_MANAGER initialized.')
         except Exception:
             logger.exception('Failed to initialize DATA_MANAGER')
+            raise
 
         # --- Scraper Manager ---
-        try:
-            from .managers.ScraperManager import ScraperManager
+        from .managers.ScraperManager import ScraperManager
 
+        try:
             logger.debug('Initializing SCRAPER_MANAGER...')
             self.SCRAPER_MANAGER = ScraperManager()
             logger.debug('SCRAPER_MANAGER initialized.')
         except Exception:
             logger.exception('Failed to initialize SCRAPER_MANAGER')
+            raise
 
         logger.debug('ScraperConfig.ready() completed.')
 
