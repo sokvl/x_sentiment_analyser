@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from django.apps import apps
 from django.conf import settings
@@ -7,6 +8,10 @@ from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.utils.timezone import now
 from rest_framework.exceptions import ValidationError, APIException
+
+from ..managers.data_manager.data_manager import ModelPredictionError
+
+logger = logging.getLogger(__name__)
 
 PREDICTION_CLASSES = {0: 0, 1: 0, 2: 0}  # negative, neutral, positive
 
@@ -34,8 +39,14 @@ class DataService:
             return result
         except ValueError as e:
             raise ValidationError(str(e))
-        except Exception as e:
-            raise APIException(f"Unexpected error during evaluation: {e}")
+        except ModelPredictionError:
+            logger.exception('Sentiment model failed to produce a prediction')
+            raise APIException(
+                "Sentiment model failed to produce a prediction. Please try again."
+            )
+        except Exception:
+            logger.exception('Unexpected error during sentiment evaluation')
+            raise APIException("Unexpected error during evaluation.")
 
     def get_predictions_by_day(self, ticker_symbols: str | None = None, days: int = 30):
         from django.core.cache import cache

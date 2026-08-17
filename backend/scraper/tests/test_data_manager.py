@@ -2,7 +2,7 @@ from unittest.mock import patch, MagicMock
 
 from django.test import TestCase
 
-from scraper.managers.data_manager.data_manager import DataManager
+from scraper.managers.data_manager.data_manager import DataManager, ModelPredictionError
 
 
 class DataManagerEvalSentimentTests(TestCase):
@@ -66,13 +66,23 @@ class DataManagerEvalSentimentTests(TestCase):
         self.assertEqual(result['text'], 'moon')
         self.assertEqual(result['ticker'], '$AAPL')
 
-    def test_handles_prediction_failure_gracefully(self):
+    def test_prediction_failure_raises_model_prediction_error(self):
         self.mock_preprocessor.preprocess.return_value = MagicMock()
         self.mock_manager.predict.side_effect = RuntimeError('Model exploded')
 
-        result = self.dm.eval_sentiment({'text': 'test', 'ticker': '$X'})
-        self.assertEqual(result['prediction'], 'unknown')
-        self.assertEqual(result['predicted_probabilities'], [])
+        with self.assertRaises(ModelPredictionError):
+            self.dm.eval_sentiment({'text': 'test', 'ticker': '$X'})
+
+    def test_nan_producing_prediction_raises_model_prediction_error(self):
+        # e.g. a NaN slipping into a tensor op raises ValueError('cannot convert
+        # float NaN to integer') deep inside model_manager.predict.
+        self.mock_preprocessor.preprocess.return_value = MagicMock()
+        self.mock_manager.predict.side_effect = ValueError(
+            'cannot convert float NaN to integer',
+        )
+
+        with self.assertRaises(ModelPredictionError):
+            self.dm.eval_sentiment({'text': 'test', 'ticker': '$X'})
 
     def test_transformer_model_passes_none_ticker(self):
         self.mock_preprocessor.preprocess.return_value = 'preprocessed'

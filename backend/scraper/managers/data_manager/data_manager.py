@@ -9,6 +9,8 @@ from django.db import DatabaseError, transaction
 
 logger = logging.getLogger(__name__)
 
+class ModelPredictionError(Exception):
+    pass
 
 class DataManager:
     """
@@ -65,13 +67,10 @@ class DataManager:
                 prediction = model_manager.predict(processed_input, None)
             else:
                 raise ValueError(f'Unsupported model type: {model_type}')
-        except Exception:
+        except Exception as e:
             logger.exception('Prediction failed for model %s', model_id)
-            prediction = {
-                'predicted_sentiment': 'unknown',
-                'predicted_probabilities': [],
-            }
-
+            raise ModelPredictionError(e)
+        
         tweet_data = {
             **tweet_object,
             'cleaned_text': cleaned_text,

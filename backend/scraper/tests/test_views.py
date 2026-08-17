@@ -212,3 +212,56 @@ class EvalViewTests(TestCase):
         request = self.factory.post('/api/eval/', {})
         response = view(request)
         self.assertEqual(response.status_code, 400)
+
+    @patch('scraper.views.eval.DataService')
+    def test_nan_prediction_failure_returns_500(self, mock_ds_cls):
+        from rest_framework.exceptions import APIException
+        from scraper.views.eval import EvalView
+
+        # Mirrors what DataService.evaluate_sentiment raises when DataManager
+        # catches a NaN-producing prediction error and re-raises it as
+        # ModelPredictionError: a generic 500 APIException, not a 400.
+        mock_ds_cls.return_value.evaluate_sentiment.side_effect = APIException(
+            'Unexpected error during evaluation: ',
+        )
+        view = EvalView.as_view()
+        request = self.factory.post('/api/eval/', {
+            'tweet': 'test tweet',
+            'ticker': '$AAPL',
+            'source_name': 'test',
+            'date': '2024-01-01',
+        })
+        response = view(request)
+        self.assertEqual(response.status_code, 500)
+
+    @patch('scraper.services.data_service.apps')
+    def test_nan_prediction_failure_real_response_body(self, mock_apps):
+        # Goes through the REAL DataService + REAL DataManager.eval_sentiment
+        # (only the model registry/predictor are mocked), using APIClient so
+        # DRF's normal exception-handling/rendering pipeline runs, to show
+        # exactly what body/status a client hitting /eval/ gets when the
+        # underlying model raises on NaN input.
+        from scraper.managers.data_manager.data_manager import DataManager
+
+        mock_registry = MagicMock()
+        mock_manager = MagicMock()
+        mock_preprocessor = MagicMock()
+        mock_registry.get.return_value = (mock_manager, mock_preprocessor, 'transformer_model')
+        mock_manager.predict.side_effect = ValueError('cannot convert float NaN to integer')
+
+        real_data_manager = DataManager(model_registry=mock_registry, default_model_id='FinBERT')
+        mock_apps.get_app_config.return_value.DATA_MANAGER = real_data_manager
+
+        client = APIClient()
+        response = client.post('/api/eval/', {
+            'tweet': 'test tweet',
+            'ticker': '$AAPL',
+            'source_name': 'test',
+            'date': '2024-01-01',
+        })
+
+        print('\nstatus_code:', response.status_code)
+        print('data:', response.data)
+        print('content:', response.content)
+
+        self.assertEqual(response.status_code, 500)
