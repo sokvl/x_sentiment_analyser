@@ -1,9 +1,10 @@
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.db import IntegrityError
 
 from scraper.models import Config
 from tickers.models import Ticker
-from signals.models import Signal
+from signals.models import Signal, UploadedFile
 
 
 class SignalModelTests(TestCase):
@@ -72,3 +73,32 @@ class SignalModelTests(TestCase):
         )
         self.config.delete()
         self.assertEqual(Signal.objects.count(), 0)
+
+
+class UploadedFileModelTests(TestCase):
+    def _make_file(self, **kwargs):
+        defaults = {
+            'display_name': 'demo.csv',
+            'file': SimpleUploadedFile('demo.csv', b'Date,Ticker,Tweet\n2024-01-01,AAPL,bullish\n'),
+        }
+        defaults.update(kwargs)
+        instance = UploadedFile.objects.create(**defaults)
+        self.addCleanup(instance.file.delete, save=False)
+        return instance
+
+    def test_defaults_to_not_interviewer_visible(self):
+        instance = self._make_file()
+        self.assertFalse(instance.is_interviewer_visible)
+
+    def test_row_count_defaults_to_none(self):
+        instance = self._make_file()
+        self.assertIsNone(instance.row_count)
+
+    def test_str_returns_display_name(self):
+        instance = self._make_file(display_name='my_file.csv')
+        self.assertEqual(str(instance), 'my_file.csv')
+
+    def test_ordering_is_newest_first(self):
+        older = self._make_file(display_name='older.csv')
+        newer = self._make_file(display_name='newer.csv')
+        self.assertEqual(list(UploadedFile.objects.all()), [newer, older])
