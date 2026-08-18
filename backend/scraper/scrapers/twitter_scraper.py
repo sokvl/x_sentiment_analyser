@@ -415,6 +415,9 @@ class TwitterScraper(Scraper):
         while True:
             if self.stop_event.is_set():
                 break
+            if self._max_time_running_exceeded():
+                self._stop_for_max_time_running()
+                break
 
             self.instance.execute_script('window.scrollTo(0, document.body.scrollHeight);')
             time.sleep(5)
@@ -484,14 +487,32 @@ class TwitterScraper(Scraper):
             time.sleep(1)
         return not self.stop_event.is_set()
 
+    def _max_time_running_exceeded(self) -> bool:
+        max_time = self.config.get('max_time_running')
+        if max_time is None:
+            return False
+        return (time.time() - self._run_started_at) > max_time
+
+    def _stop_for_max_time_running(self) -> None:
+        self._log(
+            LogTypes.WARNING,
+            f"max_time_running ({self.config.get('max_time_running')}s) exceeded — stopping scraper.",
+        )
+        self.stop()
+
     def run_procedure(self, crawling_mode=True):
         self.load_config()
         self._setup_instances()
         if not self._is_logged_in():
             self._login_twitter()
         self._set_status(ScraperStates.RUNNING)
+        self._run_started_at = time.time()
 
         while not self.stop_event.is_set():
+            if self._max_time_running_exceeded():
+                self._stop_for_max_time_running()
+                break
+
             if not self._wait_if_paused():
                 break
 
@@ -500,6 +521,10 @@ class TwitterScraper(Scraper):
                 tickers_list = self.config['twitter_query']['params']['ticker']
 
                 while not dates_pipeline.empty() and not self.stop_event.is_set():
+                    if self._max_time_running_exceeded():
+                        self._stop_for_max_time_running()
+                        break
+
                     current_date = dates_pipeline.get()
                     next_date = (
                         datetime.strptime(current_date, '%Y-%m-%d') + timedelta(days=1)
@@ -509,6 +534,9 @@ class TwitterScraper(Scraper):
 
                     for ticker in tickers_list:
                         if self.stop_event.is_set():
+                            break
+                        if self._max_time_running_exceeded():
+                            self._stop_for_max_time_running()
                             break
                         if not self._wait_if_paused():
                             break
@@ -527,7 +555,8 @@ class TwitterScraper(Scraper):
                         )
 
                 # All dates exhausted — wait before next crawl cycle
-                time.sleep(self.config['crawl_interval'])
+                if not self.stop_event.is_set():
+                    time.sleep(self.config['crawl_interval'])
 
             else:
                 time.sleep(1)
