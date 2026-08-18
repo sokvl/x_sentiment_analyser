@@ -84,10 +84,10 @@ export default function ProcessedTickerDataTile({ styles }) {
                     <table className="w-full text-sm border-collapse">
                         <thead>
                             <tr className="bg-gray-700 text-gray-300">
-                                <th className="p-1 text-center font-semibold">Ticker</th>
-                                <th className="p-1 text-center font-semibold">Date</th>
-                                <th className="p-1 text-center font-semibold">Price</th>
-                                <th className="p-1 text-center font-semibold">Change %</th>
+                                <th className="p-1 text-left font-semibold">Ticker</th>
+                                <th className="p-1 text-left font-semibold">Date</th>
+                                <th className="p-1 text-left font-semibold">Price</th>
+                                <th className="p-1 text-left font-semibold">Change %</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -96,9 +96,9 @@ export default function ProcessedTickerDataTile({ styles }) {
                                     key={index}
                                     className="border-t border-gray-700 hover:bg-gray-800"
                                 >
-                                    <td className="p-2 font-semibold text-gray-200">{row.ticker}</td>
-                                    <td className="p-2 text-gray-300">{row.date}</td>
-                                    <td className="p-2 text-gray-300">${row.close.toFixed(2)}</td>
+                                    <td className="p-2 text-left font-semibold text-gray-200">{row.ticker}</td>
+                                    <td className="p-2 text-left text-gray-300">{row.date}</td>
+                                    <td className="p-2 text-left text-gray-300">${row.close.toFixed(2)}</td>
                                     <td
                                         className={`p-2 font-semibold ${row.change > 0
                                             ? 'text-green-400'
