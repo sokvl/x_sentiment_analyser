@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from stocknlp.permissions import IsOwnerOrHasInterviewerKey
 from ..services.csv_service import CSVProcessingService
 from ..utils import get_data_manager
 
@@ -9,6 +10,8 @@ class ProcessCSVView(APIView):
     Upload a CSV of tweets for batch LLM evaluation.
     Matches the logic and flow of the user's provided snippet.
     """
+    permission_classes = [IsOwnerOrHasInterviewerKey]
+
     def post(self, request):
         file = request.FILES.get('file')
         model_id = request.data.get('model_id')

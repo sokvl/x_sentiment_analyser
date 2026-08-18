@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
+from stocknlp.permissions import IsOwnerOrHasInterviewerKey
 from ..services.signal_service import SignalService
 from ..utils import parse_date, fetch_historical_data, safe_round
 
@@ -12,6 +13,8 @@ class PredictionReportView(APIView):
     Backtesting report: compare generated signals against actual stock movements.
     Matches the logic provided in the user's snippet.
     """
+    permission_classes = [IsOwnerOrHasInterviewerKey]
+
     def get(self, request):
         tickers_param = request.query_params.get('tickers', 'all')
         start_date_str = request.query_params.get('start_date')

@@ -34,6 +34,13 @@ class CSVProcessingService:
         batch: List[Dict[str, Any]] = []
 
         try:
+            size = getattr(file_obj, 'size', None)
+            if size is not None and size > settings.MAX_CSV_FILE_SIZE_BYTES:
+                raise ValueError(
+                    f"File too large ({size} bytes). "
+                    f"Maximum allowed is {settings.MAX_CSV_FILE_SIZE_BYTES} bytes.",
+                )
+
             content = file_obj.read().decode('utf-8')
             logger.debug('CSV content length: %d characters', len(content))
             csv_reader = csv.DictReader(io.StringIO(content))
@@ -47,6 +54,9 @@ class CSVProcessingService:
                 raise ValueError(f"Missing required columns: {', '.join(missing)}")
 
             for row_idx, row in enumerate(csv_reader, start=1):
+                if row_idx > settings.MAX_CSV_ROWS:
+                    raise ValueError(f"Too many rows. Maximum allowed is {settings.MAX_CSV_ROWS}.")
+
                 parsed_data, error = self._parse_row(row)
                 if error or parsed_data is None:
                     logger.debug('Row %d parse error: %s', row_idx, error)

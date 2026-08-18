@@ -4,6 +4,7 @@ from datetime import date
 from django.test import TestCase, override_settings
 from rest_framework.test import APIRequestFactory
 
+from signals.models import Signal
 from signals.views.generation import SignalGenerationView
 from signals.views.csv_views import ProcessCSVView
 from signals.views.reporting import PredictionReportView
@@ -76,6 +77,31 @@ class SignalGenerationViewTests(TestCase):
         mock_service.resolve_tickers.assert_called_once_with('all')
         call_kwargs = mock_service.generate_for_tickers.call_args
         self.assertEqual(call_kwargs.kwargs['used_model'], 'LSTMCNNv1')
+
+
+@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+class SignalGenerationViewPermissionTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.view = SignalGenerationView.as_view()
+
+    def test_interviewer_key_alone_is_rejected_and_creates_no_signal(self):
+        request = self.factory.get(
+            '/api/signals/generate/',
+            {'date': '2024-01-15', 'with_save': 'true'},
+            HTTP_X_ACCESS_KEY='test-key',
+        )
+        response = self.view(request)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Signal.objects.count(), 0)
+
+    def test_anonymous_alone_is_rejected_and_creates_no_signal(self):
+        request = self.factory.get(
+            '/api/signals/generate/', {'date': '2024-01-15', 'with_save': 'true'},
+        )
+        response = self.view(request)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Signal.objects.count(), 0)
 
 
 class ProcessCSVViewTests(TestCase):

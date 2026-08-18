@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from datetime import timedelta
+from stocknlp.permissions import IsOwner
 from ..services.signal_service import SignalService
 from ..utils import parse_date
 
@@ -10,6 +11,8 @@ class SignalGenerationView(APIView):
     Generate BUY/SELL/HOLD signals from existing post predictions.
     Matches the logic provided in the user's snippet (2-day window).
     """
+    permission_classes = [IsOwner]
+
     def get(self, request):
         start_date_str = request.query_params.get('start_date')
         end_date_str = request.query_params.get('end_date')
