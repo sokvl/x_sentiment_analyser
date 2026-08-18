@@ -37,6 +37,13 @@ class DataManager:
             self._ticker_to_index = self._load_json(settings.TICKER_TO_INDEX_PATH)
         return self._ticker_to_index
 
+    def _resolve_ticker_input(self, model_type: str, ticker: str) -> list[int] | None:
+        if model_type == 'lstmcnn_model':
+            return [self._get_ticker_to_index().get(ticker, 0)]
+        if model_type == 'transformer_model':
+            return None
+        raise ValueError(f'Unsupported model type: {model_type}')
+
     def eval_sentiment(
         self,
         tweet_object: dict,
@@ -57,16 +64,8 @@ class DataManager:
         processed_input = preprocessor.preprocess(tweet)
 
         try:
-            if model_type == 'lstmcnn_model':
-                ticker_index = self._get_ticker_to_index().get(ticker, 0)
-                prediction = model_manager.predict(
-                    processed_input,
-                    [ticker_index],
-                )
-            elif model_type == 'transformer_model':
-                prediction = model_manager.predict(processed_input, None)
-            else:
-                raise ValueError(f'Unsupported model type: {model_type}')
+            x_ticker = self._resolve_ticker_input(model_type, ticker)
+            prediction = model_manager.predict(processed_input, x_ticker)
         except Exception as e:
             logger.exception('Prediction failed for model %s', model_id)
             raise ModelPredictionError(e)
