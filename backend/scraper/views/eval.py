@@ -1,5 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from stocknlp.permissions import IsOwner, IsOwnerOrHasInterviewerKey
 from ..serializers import EvalRequestSerializer, EvalResponseSerializer
 from ..services.data_service import DataService
 
@@ -7,6 +8,8 @@ class EvalView(APIView):
     """
     On-demand sentiment evaluation.
     """
+    permission_classes = [IsOwner]
+
     def post(self, request):
         serializer = EvalRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -24,6 +27,8 @@ class PredictionsByDayView(APIView):
     """
     Aggregated prediction statistics optimized for performance.
     """
+    permission_classes = [IsOwnerOrHasInterviewerKey]
+
     def get(self, request):
         tickers = request.query_params.get('tickers', 'all')
         service = DataService()

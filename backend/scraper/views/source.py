@@ -2,11 +2,12 @@ from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from stocknlp.permissions import ActionPermissionsMixin, IsOwner, IsOwnerOrHasInterviewerKey
 from ..models import Source
 from ..serializers import SourceSerializer
 from ..services.scraper_service import ScraperService
 
-class SourceViewSet(viewsets.ModelViewSet):
+class SourceViewSet(ActionPermissionsMixin, viewsets.ModelViewSet):
     """
     ViewSet for Sources with integrated Scraper control actions.
     """
@@ -15,6 +16,14 @@ class SourceViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name']
     ordering_fields = ['name']
+    action_permission_classes = {
+        'create': [IsOwner],
+        'update': [IsOwner],
+        'partial_update': [IsOwner],
+        'destroy': [IsOwner],
+        'control': [IsOwner],
+        'logs': [IsOwnerOrHasInterviewerKey],
+    }
 
     @action(detail=True, methods=['post'], url_path='control/(?P<scraper_action>[^/.]+)')
     def control(self, request, pk=None, scraper_action=None):

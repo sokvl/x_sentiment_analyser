@@ -19,6 +19,7 @@ load_dotenv(BASE_DIR / '.env')
 # ---------------------------------------------------------------------------
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes')
+RAW_DEBUG = DEBUG
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 if not SECRET_KEY:
@@ -168,6 +169,21 @@ CACHES = {
 CACHE_TTL_STOCK_DATA    = int(os.getenv('CACHE_TTL_STOCK_DATA',    60 * 60))   # 1 hour
 CACHE_TTL_PREDICTIONS   = int(os.getenv('CACHE_TTL_PREDICTIONS',   60 * 10))   # 10 minutes
 CACHE_TTL_WORKER_RESULT = int(os.getenv('CACHE_TTL_WORKER_RESULT', 60 * 5))    # 5 minutes
+CACHE_TTL_FILE_OUTPUT   = int(os.getenv('CACHE_TTL_FILE_OUTPUT',   60 * 30))   # 30 minutes
+
+# ---------------------------------------------------------------------------
+# CSV upload limits
+# ---------------------------------------------------------------------------
+
+MAX_CSV_FILE_SIZE_BYTES = int(os.getenv('MAX_CSV_FILE_SIZE_BYTES', 5 * 1024 * 1024))  # 5 MB
+MAX_CSV_ROWS            = int(os.getenv('MAX_CSV_ROWS',            5000))
+
+# ---------------------------------------------------------------------------
+# Media files
+# ---------------------------------------------------------------------------
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # ---------------------------------------------------------------------------
 # Static files

@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from stocknlp.permissions import IsOwner, IsOwnerOrHasInterviewerKey
 from ..services.scraper_service import ScraperService
 from ..serializers import ConfigSerializer
 
@@ -8,6 +9,8 @@ class ScraperControlView(APIView):
     """
     Compatibility view for legacy /scraper/{action}/ endpoints.
     """
+    permission_classes = [IsOwner]
+
     def post(self, request, action):
         valid_actions = ['start', 'pause', 'resume', 'stop', 'restart']
         if action not in valid_actions:
@@ -28,6 +31,8 @@ class ScraperLogsView(APIView):
     """
     Compatibility view for legacy /scraper/logs/ endpoint.
     """
+    permission_classes = [IsOwnerOrHasInterviewerKey]
+
     def get(self, request):
         source_name = request.query_params.get("source")
         if not source_name:
@@ -47,6 +52,8 @@ class ScraperConfigView(APIView):
     """
     Compatibility view for legacy /scraper/config/ endpoint.
     """
+    permission_classes = [IsOwner]
+
     def post(self, request):
         serializer = ConfigSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
