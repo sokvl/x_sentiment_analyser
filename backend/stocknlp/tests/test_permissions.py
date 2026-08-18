@@ -1,15 +1,35 @@
 from types import SimpleNamespace
 
+from django.contrib.auth.models import User
 from django.test import SimpleTestCase
+from django.test import TestCase
 from django.test import override_settings
+from django.urls import path
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
+from rest_framework.views import APIView
 
 from stocknlp.permissions import HasInterviewerKey
 from stocknlp.permissions import IsOwner
 from stocknlp.permissions import IsOwnerOrHasInterviewerKey
 
+not_debug = override_settings(RAW_DEBUG=False)
+
 factory = APIRequestFactory()
+
+
+class _OwnerOnlyProbeView(APIView):
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsOwner]
+
+    def get(self, request):
+        return Response({'ok': True})
+
+
+urlpatterns = [path('__owner_probe__/', _OwnerOnlyProbeView.as_view())]
 
 owner = SimpleNamespace(is_authenticated=True)
 anonymous = SimpleNamespace(is_authenticated=False)
@@ -60,6 +80,7 @@ class HasInterviewerKeyTests(SimpleTestCase):
         self.assertFalse(HasInterviewerKey().has_permission(request, None))
 
 
+@not_debug
 class IsOwnerTests(SimpleTestCase):
     def test_authenticated_user_allowed(self):
         request = make_request('get', user=owner)
@@ -70,6 +91,7 @@ class IsOwnerTests(SimpleTestCase):
         self.assertFalse(IsOwner().has_permission(request, None))
 
 
+@not_debug
 @override_settings(INTERVIEWER_ACCESS_KEY='super-secret')
 class IsOwnerOrHasInterviewerKeyTests(SimpleTestCase):
     def test_owner_allowed_on_write_without_key(self):
@@ -87,3 +109,26 @@ class IsOwnerOrHasInterviewerKeyTests(SimpleTestCase):
     def test_non_owner_without_key_denied(self):
         request = make_request('get', user=anonymous)
         self.assertFalse(IsOwnerOrHasInterviewerKey().has_permission(request, None))
+
+
+@not_debug
+@override_settings(ROOT_URLCONF=__name__)
+class IsOwnerSessionAuthenticationIntegrationTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='owner', password='pw123456')
+        self.client = APIClient()
+
+    def test_logged_in_session_is_allowed(self):
+        self.client.login(username='owner', password='pw123456')
+        response = self.client.get('/__owner_probe__/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_no_session_is_denied(self):
+        response = self.client.get('/__owner_probe__/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_logged_out_session_is_denied(self):
+        self.client.login(username='owner', password='pw123456')
+        self.client.logout()
+        response = self.client.get('/__owner_probe__/')
+        self.assertEqual(response.status_code, 403)
