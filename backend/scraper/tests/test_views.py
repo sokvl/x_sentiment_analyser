@@ -135,6 +135,49 @@ class ConfigViewSetTests(TestCase):
         self.config.refresh_from_db()
         self.assertEqual(self.config.config_string['brand_new'], 'value')
 
+    def test_update_config_string_rejects_malformed_shape(self):
+        # scrapers_config must be a list per ConfigSerializer.validate_config_string —
+        # the custom action must not be able to bypass that.
+        response = self.client.patch(
+            f'/api/config/{self.config.config_id}/update_config_string/',
+            {'config_string': {'scrapers_config': 'not-a-list'}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.config.refresh_from_db()
+        self.assertEqual(self.config.config_string['scrapers_config'], [])
+
+    def test_update_config_string_list_merge_does_not_duplicate(self):
+        self.config.config_string['scrapers_config'] = [{'crawl_interval': 60}]
+        self.config.save()
+
+        for _ in range(3):
+            response = self.client.patch(
+                f'/api/config/{self.config.config_id}/update_config_string/',
+                {'config_string': {'scrapers_config': [{'crawl_interval': 60}]}},
+                format='json',
+            )
+            self.assertEqual(response.status_code, 200)
+
+        self.config.refresh_from_db()
+        self.assertEqual(self.config.config_string['scrapers_config'], [{'crawl_interval': 60}])
+
+    def test_update_config_string_list_merge_still_adds_new_items(self):
+        self.config.config_string['scrapers_config'] = [{'crawl_interval': 60}]
+        self.config.save()
+
+        response = self.client.patch(
+            f'/api/config/{self.config.config_id}/update_config_string/',
+            {'config_string': {'scrapers_config': [{'crawl_interval': 90}]}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.config.refresh_from_db()
+        self.assertEqual(
+            self.config.config_string['scrapers_config'],
+            [{'crawl_interval': 60}, {'crawl_interval': 90}],
+        )
+
 
 class PostViewSetTests(TestCase):
     def setUp(self):

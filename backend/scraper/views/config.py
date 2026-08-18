@@ -23,17 +23,20 @@ class ConfigViewSet(viewsets.ModelViewSet):
     def update_config_string(self, request, pk=None):
         config = self.get_object()
         new_data = request.data.get('config_string', {})
-        
+
+        merged = dict(config.config_string)
         for key, value in new_data.items():
-            if key in config.config_string:
-                if isinstance(value, dict) and isinstance(config.config_string[key], dict):
-                    config.config_string[key].update(value)
-                elif isinstance(value, list) and isinstance(config.config_string[key], list):
-                    config.config_string[key].extend(value)
-                else:
-                    config.config_string[key] = value
+            current = merged.get(key)
+            if isinstance(value, dict) and isinstance(current, dict):
+                merged[key] = {**current, **value}
+            elif isinstance(value, list) and isinstance(current, list):
+                merged[key] = current + [item for item in value if item not in current]
             else:
-                config.config_string[key] = value
-        
-        config.save()
-        return Response(self.get_serializer(config).data)
+                merged[key] = value
+
+        serializer = self.get_serializer(
+            config, data={'config_string': merged}, partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
