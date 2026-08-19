@@ -1,14 +1,24 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from stocknlp.permissions import ActionPermissionsMixin, IsOwner
 from ..models import Ticker
 from ..serializers import TickerSerializer
 
-class TickerViewSet(viewsets.ModelViewSet):
+class TickerViewSet(ActionPermissionsMixin, viewsets.ModelViewSet):
     """
     Standard CRUD ViewSet for Tickers.
     """
+    permission_classes = [AllowAny]
+    action_permission_classes = {
+        'create': [IsOwner],
+        'update': [IsOwner],
+        'partial_update': [IsOwner],
+        'destroy': [IsOwner],
+        'list_by_type': [AllowAny],
+    }
     serializer_class = TickerSerializer
     queryset = Ticker.objects.all()
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]

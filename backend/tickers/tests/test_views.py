@@ -1,7 +1,8 @@
 from unittest.mock import patch, MagicMock
 
-from django.test import TestCase
-from rest_framework.test import APIRequestFactory, APIClient
+from django.contrib.auth.models import User
+from django.test import TestCase, override_settings
+from rest_framework.test import APIRequestFactory, APIClient, force_authenticate
 
 from tickers.models import Ticker
 from tickers.views.ticker import TickerViewSet
@@ -82,6 +83,89 @@ class TickerViewSetTests(TestCase):
         self.assertEqual(self.ticker.full_name, 'Apple Corporation')
 
 
+@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+class TickerViewSetPermissionTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username='owner', password='pw123456')
+        self.owner_client = APIClient()
+        self.owner_client.force_authenticate(user=self.owner)
+
+        self.interviewer_client = APIClient()
+        self.interviewer_headers = {'HTTP_X_ACCESS_KEY': 'test-key'}
+
+        self.anon_client = APIClient()
+
+        self.ticker = Ticker.objects.create(
+            symbol='AAPL', type='stock', full_name='Apple Inc.',
+        )
+
+    def test_anonymous_list_retrieve_by_type_succeed(self):
+        self.assertEqual(self.anon_client.get('/api/tickers/tickers/').status_code, 200)
+        self.assertEqual(
+            self.anon_client.get(f'/api/tickers/tickers/{self.ticker.ticker_id}/').status_code, 200,
+        )
+        self.assertEqual(
+            self.anon_client.get('/api/tickers/tickers/by-type/stock/').status_code, 200,
+        )
+
+    def test_interviewer_create_denied(self):
+        response = self.interviewer_client.post(
+            '/api/tickers/tickers/',
+            {'symbol': 'TSLA', 'type': 'stock', 'full_name': 'Tesla Inc.'},
+            **self.interviewer_headers,
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_interviewer_bulk_create_denied(self):
+        response = self.interviewer_client.post(
+            '/api/tickers/tickers/',
+            [{'symbol': 'TSLA', 'type': 'stock', 'full_name': 'Tesla Inc.'}],
+            format='json',
+            **self.interviewer_headers,
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_interviewer_update_denied(self):
+        response = self.interviewer_client.patch(
+            f'/api/tickers/tickers/{self.ticker.ticker_id}/',
+            {'full_name': 'x'}, format='json',
+            **self.interviewer_headers,
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_interviewer_destroy_denied(self):
+        response = self.interviewer_client.delete(
+            f'/api/tickers/tickers/{self.ticker.ticker_id}/', **self.interviewer_headers,
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_owner_create_allowed(self):
+        response = self.owner_client.post(
+            '/api/tickers/tickers/',
+            {'symbol': 'TSLA', 'type': 'stock', 'full_name': 'Tesla Inc.'},
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_owner_bulk_create_allowed(self):
+        response = self.owner_client.post(
+            '/api/tickers/tickers/',
+            [{'symbol': 'TSLA', 'type': 'stock', 'full_name': 'Tesla Inc.'}],
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_owner_update_allowed(self):
+        response = self.owner_client.patch(
+            f'/api/tickers/tickers/{self.ticker.ticker_id}/',
+            {'full_name': 'Apple Corporation'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_owner_destroy_allowed(self):
+        response = self.owner_client.delete(f'/api/tickers/tickers/{self.ticker.ticker_id}/')
+        self.assertEqual(response.status_code, 204)
+
+
 class StockDataViewTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
@@ -124,3 +208,41 @@ class StockDataViewTests(TestCase):
         request = self.factory.get('/api/tickers/stock-data/', {'tickers': 'AAPL', 'start_date': 'bad'})
         response = self.view(request)
         self.assertEqual(response.status_code, 400)
+
+
+@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+class StockDataViewPermissionTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.view = StockDataView.as_view()
+        self.owner = User.objects.create_user(username='owner', password='pw123456')
+
+    def test_anonymous_no_key_denied(self):
+        request = self.factory.get('/api/tickers/stock-data/', {'tickers': 'AAPL'})
+        response = self.view(request)
+        self.assertEqual(response.status_code, 403)
+
+    @patch('tickers.views.stock_data.TickerService')
+    def test_interviewer_key_allowed(self, mock_service_cls):
+        mock_service = mock_service_cls.return_value
+        mock_service.resolve_tickers.return_value = (['AAPL'], MagicMock())
+        mock_service.parse_date_range.return_value = (MagicMock(), MagicMock())
+        mock_service.fetch_stock_data.return_value = {'AAPL': [{'Open': 150}]}
+
+        request = self.factory.get(
+            '/api/tickers/stock-data/', {'tickers': 'AAPL'}, HTTP_X_ACCESS_KEY='test-key',
+        )
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+
+    @patch('tickers.views.stock_data.TickerService')
+    def test_owner_allowed(self, mock_service_cls):
+        mock_service = mock_service_cls.return_value
+        mock_service.resolve_tickers.return_value = (['AAPL'], MagicMock())
+        mock_service.parse_date_range.return_value = (MagicMock(), MagicMock())
+        mock_service.fetch_stock_data.return_value = {'AAPL': [{'Open': 150}]}
+
+        request = self.factory.get('/api/tickers/stock-data/', {'tickers': 'AAPL'})
+        force_authenticate(request, user=self.owner)
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
