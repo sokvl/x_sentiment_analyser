@@ -1,10 +1,12 @@
 from types import SimpleNamespace
+from unittest import mock
 
 from django.contrib.auth.models import User
 from django.test import SimpleTestCase
 from django.test import TestCase
 from django.test import override_settings
 from django.urls import path
+from rest_framework.authentication import BasicAuthentication
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -15,6 +17,7 @@ from rest_framework.views import APIView
 from stocknlp.permissions import HasInterviewerKey
 from stocknlp.permissions import IsOwner
 from stocknlp.permissions import IsOwnerOrHasInterviewerKey
+from tickers.views.ticker import TickerViewSet
 
 not_debug = override_settings(RAW_DEBUG=False)
 
@@ -132,3 +135,41 @@ class IsOwnerSessionAuthenticationIntegrationTests(TestCase):
         self.client.logout()
         response = self.client.get('/__owner_probe__/')
         self.assertEqual(response.status_code, 403)
+
+
+class OwnerAdminLoginEndToEndTests(TestCase):
+    def setUp(self):
+        self.owner_user = User.objects.create_superuser(
+            username='owner', email='owner@example.com', password='pw123456',
+        )
+
+    def test_admin_login_page_loads(self):
+        response = self.client.get('/admin/login/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_admin_login_establishes_authenticated_session(self):
+        response = self.client.post(
+            '/admin/login/',
+            {'username': 'owner', 'password': 'pw123456', 'next': '/admin/'},
+            follow=True,
+        )
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertEqual(response.wsgi_request.user.username, 'owner')
+
+    @not_debug
+    def test_admin_session_reaches_real_owner_only_endpoint(self):
+        with mock.patch.object(
+            TickerViewSet, 'authentication_classes',
+            [SessionAuthentication, BasicAuthentication],
+        ):
+            self.client.get('/admin/login/')
+            self.client.post(
+                '/admin/login/', {'username': 'owner', 'password': 'pw123456', 'next': '/admin/'},
+            )
+            csrf_token = self.client.cookies['csrftoken'].value
+            response = self.client.post(
+                '/api/tickers/tickers/',
+                {'symbol': 'NFLX', 'type': 'stock', 'full_name': 'Netflix Inc.'},
+                HTTP_X_CSRFTOKEN=csrf_token,
+            )
+        self.assertEqual(response.status_code, 201)
