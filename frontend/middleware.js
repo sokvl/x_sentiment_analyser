@@ -14,7 +14,6 @@ export function middleware(request) {
         response.cookies.set(ACCESS_KEY_COOKIE, keyParam, {
             path: '/',
             sameSite: 'lax',
-            httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
         });
         return response;
