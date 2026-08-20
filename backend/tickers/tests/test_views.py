@@ -154,6 +154,25 @@ class TickerViewSetPermissionTests(TestCase):
         )
         self.assertEqual(response.status_code, 201)
 
+    @override_settings(MAX_TICKER_BULK_CREATE=2)
+    def test_owner_bulk_create_over_limit_rejected(self):
+        payload = [
+            {'symbol': f'SYM{i}', 'type': 'stock', 'full_name': f'Symbol {i}'}
+            for i in range(3)
+        ]
+        response = self.owner_client.post('/api/tickers/tickers/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Ticker.objects.count(), 1)
+
+    @override_settings(MAX_TICKER_BULK_CREATE=2)
+    def test_owner_bulk_create_at_limit_allowed(self):
+        payload = [
+            {'symbol': f'SYM{i}', 'type': 'stock', 'full_name': f'Symbol {i}'}
+            for i in range(2)
+        ]
+        response = self.owner_client.post('/api/tickers/tickers/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+
     def test_owner_update_allowed(self):
         response = self.owner_client.patch(
             f'/api/tickers/tickers/{self.ticker.ticker_id}/',

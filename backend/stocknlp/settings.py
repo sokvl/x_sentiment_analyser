@@ -191,6 +191,12 @@ CSV_JOB_CACHE_TTL        = int(os.getenv('CSV_JOB_CACHE_TTL',        60 * 60))  
 YFINANCE_TIMEOUT_SECONDS = int(os.getenv('YFINANCE_TIMEOUT_SECONDS', 10))
 
 # ---------------------------------------------------------------------------
+# Ticker reference data
+# ---------------------------------------------------------------------------
+
+MAX_TICKER_BULK_CREATE = int(os.getenv('MAX_TICKER_BULK_CREATE', 100))
+
+# ---------------------------------------------------------------------------
 # Media files
 # ---------------------------------------------------------------------------
 

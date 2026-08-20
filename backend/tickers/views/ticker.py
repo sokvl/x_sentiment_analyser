@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -6,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from stocknlp.permissions import ActionPermissionsMixin, IsOwner
 from ..models import Ticker
 from ..serializers import TickerSerializer
+
 
 class TickerViewSet(ActionPermissionsMixin, viewsets.ModelViewSet):
     """
@@ -30,6 +32,14 @@ class TickerViewSet(ActionPermissionsMixin, viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Support bulk creation by accepting a list of objects."""
         is_many = isinstance(request.data, list)
+        if is_many and len(request.data) > settings.MAX_TICKER_BULK_CREATE:
+            return Response(
+                {
+                    'error': f"Cannot create more than {settings.MAX_TICKER_BULK_CREATE} "
+                             f"tickers in a single request ({len(request.data)} given).",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = self.get_serializer(data=request.data, many=is_many)
         serializer.is_valid(raise_exception=True)
         serializer.save()
