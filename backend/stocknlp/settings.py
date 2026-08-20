@@ -7,6 +7,13 @@ from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.lower() in ('1', 'true', 'yes')
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -31,7 +38,7 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = (
     ['*']
-    if DEBUG
+    if _env_bool('DJANGO_ALLOW_ALL_HOSTS', False)
     else os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 )
 
@@ -50,7 +57,7 @@ CORS_ALLOWED_ORIGINS = [
     if o.strip()
 ]
 
-if DEBUG:
+if _env_bool('DJANGO_CORS_ALLOW_ALL', False):
     CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_HEADERS = [*default_headers, 'x-access-key']
@@ -86,7 +93,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    *([] if DEBUG else ['django.middleware.csrf.CsrfViewMiddleware']),
+    *(['django.middleware.csrf.CsrfViewMiddleware'] if _env_bool('DJANGO_ENABLE_CSRF', True) else []),
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -263,7 +270,9 @@ DEFAULT_MODEL_ID = os.getenv('DEFAULT_MODEL_ID', 'FinBERT')
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny' if DEBUG else 'stocknlp.permissions.IsOwnerOrHasInterviewerKey',
+        'rest_framework.permissions.AllowAny'
+        if _env_bool('DJANGO_PERMISSIVE_API', False)
+        else 'stocknlp.permissions.IsOwnerOrHasInterviewerKey',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': (
         []
