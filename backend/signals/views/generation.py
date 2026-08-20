@@ -4,7 +4,7 @@ from rest_framework import status
 from datetime import timedelta
 from stocknlp.permissions import IsOwner
 from ..services.signal_service import SignalService
-from ..utils import parse_date
+from ..utils import parse_date, log_and_get_safe_message
 
 class SignalGenerationView(APIView):
     """
@@ -55,7 +55,5 @@ class SignalGenerationView(APIView):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-             return Response(
-                {'error': 'Signal generation failed', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            message = log_and_get_safe_message(e, 'Signal generation failed')
+            return Response({'error': message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

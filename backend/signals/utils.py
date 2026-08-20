@@ -1,12 +1,20 @@
 # signals/utils.py
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime
 from datetime import timedelta
 
 import yfinance as yf
 from django.apps import apps
+
+logger = logging.getLogger(__name__)
+
+
+def log_and_get_safe_message(exc: Exception, context: str) -> str:
+    logger.exception(context)
+    return context
 
 
 def safe_round(value, decimals=2):

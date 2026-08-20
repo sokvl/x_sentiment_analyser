@@ -6,7 +6,7 @@ from rest_framework import status
 from django.conf import settings
 from stocknlp.permissions import IsOwnerOrHasInterviewerKey
 from ..services.signal_service import SignalService
-from ..utils import parse_date, fetch_historical_data, safe_round
+from ..utils import parse_date, fetch_historical_data, safe_round, log_and_get_safe_message
 
 class PredictionReportView(APIView):
     """
@@ -42,10 +42,8 @@ class PredictionReportView(APIView):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            return Response(
-                {'error': 'Report generation failed', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            message = log_and_get_safe_message(e, 'Report generation failed')
+            return Response({'error': message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _generate_report(self, service: SignalService, tickers, start_date, end_date) -> dict:
         report = {}

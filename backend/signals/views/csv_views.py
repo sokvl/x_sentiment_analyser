@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from stocknlp.permissions import IsOwnerOrHasInterviewerKey
 from ..services.csv_service import CSVProcessingService, CSVProcessingTimeout
-from ..utils import get_data_manager
+from ..utils import get_data_manager, log_and_get_safe_message
 
 
 def _job_cache_key(job_id):
@@ -42,10 +42,17 @@ def _run_csv_job(job_id, file_path, model_id):
             {'status': 'timed_out', 'results': results, 'errors': errors, 'error': str(e)},
             timeout=settings.CSV_JOB_CACHE_TTL,
         )
-    except Exception as e:
+    except ValueError as e:
         cache.set(
             _job_cache_key(job_id),
             {'status': 'failed', 'results': None, 'errors': None, 'error': str(e)},
+            timeout=settings.CSV_JOB_CACHE_TTL,
+        )
+    except Exception as e:
+        message = log_and_get_safe_message(e, 'CSV processing failed')
+        cache.set(
+            _job_cache_key(job_id),
+            {'status': 'failed', 'results': None, 'errors': None, 'error': message},
             timeout=settings.CSV_JOB_CACHE_TTL,
         )
     finally:

@@ -68,13 +68,15 @@ class SignalGenerationViewTests(TestCase):
     @patch('signals.views.generation.SignalService')
     def test_internal_error_returns_500(self, mock_service_cls):
         mock_service = mock_service_cls.return_value
-        mock_service.resolve_tickers.side_effect = RuntimeError("Unexpected")
+        mock_service.resolve_tickers.side_effect = RuntimeError("/etc/secret/db.conf leaked")
 
         request = self.factory.get('/api/signals/generate/', {
             'date': '2024-01-15',
         })
         response = self.view(request)
         self.assertEqual(response.status_code, 500)
+        self.assertNotIn('secret', response.data['error'])
+        self.assertEqual(response.data['error'], 'Signal generation failed')
 
     @patch('signals.views.generation.SignalService')
     def test_defaults_to_all_tickers_and_lstmcnnv1(self, mock_service_cls):
@@ -192,6 +194,25 @@ class ProcessCSVViewTests(TestCase):
     @patch('signals.views.csv_views.threading.Thread', SyncThread)
     @patch('signals.views.csv_views.CSVProcessingService')
     @patch('signals.views.csv_views.get_data_manager')
+    def test_unexpected_error_does_not_leak_exception_text(self, mock_get_dm, mock_csv_svc, *_):
+        mock_get_dm.return_value = (MagicMock(), None)
+        mock_csv_svc.return_value.process.side_effect = RuntimeError("/etc/secret/db.conf leaked")
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        file = SimpleUploadedFile('data.csv', b'Date,Ticker,Tweet\n2024-01-01,AAPL,bullish\n', content_type='text/csv')
+        request = self.factory.post('/api/signals/process-csv/', {'file': file}, format='multipart')
+        response = self.view(request)
+
+        status_view = ProcessCSVJobStatusView.as_view()
+        status_request = self.factory.get(f'/api/signals/process-csv/{response.data["job_id"]}/')
+        status_response = status_view(status_request, job_id=response.data['job_id'])
+        self.assertEqual(status_response.data['status'], 'failed')
+        self.assertNotIn('secret', status_response.data['error'])
+        self.assertEqual(status_response.data['error'], 'CSV processing failed')
+
+    @patch('signals.views.csv_views.threading.Thread', SyncThread)
+    @patch('signals.views.csv_views.CSVProcessingService')
+    @patch('signals.views.csv_views.get_data_manager')
     def test_timeout_reflected_in_job_status(self, mock_get_dm, mock_csv_svc, *_):
         from signals.services.csv_service import CSVProcessingTimeout
         mock_get_dm.return_value = (MagicMock(), None)
@@ -252,6 +273,20 @@ class PredictionReportViewTests(TestCase):
         })
         response = self.view(request)
         self.assertEqual(response.status_code, 400)
+
+    @patch('signals.views.reporting.SignalService')
+    def test_internal_error_does_not_leak_exception_text(self, mock_service_cls):
+        mock_service = mock_service_cls.return_value
+        mock_service.resolve_tickers.side_effect = RuntimeError("/etc/secret/db.conf leaked")
+
+        request = self.factory.get('/api/signals/prediction-report/', {
+            'start_date': '2024-01-01',
+            'end_date': '2024-01-31',
+        })
+        response = self.view(request)
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn('secret', response.data['error'])
+        self.assertEqual(response.data['error'], 'Report generation failed')
 
     @patch('signals.views.reporting.SignalService')
     def test_successful_report(self, mock_service_cls):
