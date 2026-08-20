@@ -1,10 +1,10 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import ScraperStatusTile from '../components/scraper/ScraperStatusTile';
-import TickersTile from '../components/tickers/TickersTile';
-import SignalForecastTile from '../components/signals/SignalForecastTile';
-import { useUserConfig } from '../utils/UserConfigContext';
-import apiFetch from '../utils/apiFetch';
+import ScraperStatusTile from '../../components/scraper/ScraperStatusTile';
+import TickersTile from '../../components/tickers/TickersTile';
+import SignalForecastTile from '../../components/signals/SignalForecastTile';
+import { useUserConfig } from '../../utils/UserConfigContext';
+import apiFetch from '../../utils/apiFetch';
 
 export default function SetupPage() {
     const { state: userConfig } = useUserConfig();

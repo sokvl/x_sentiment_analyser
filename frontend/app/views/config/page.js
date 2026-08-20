@@ -1,11 +1,11 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import ConfigTile from '../components/config/ConfigTile';
-import JsonEditor from '../components/config/JsonEditor';
-import JsonToggle from '../components/config/JsonToggle';
+import ConfigTile from '../../components/config/ConfigTile';
+import JsonEditor from '../../components/config/JsonEditor';
+import JsonToggle from '../../components/config/JsonToggle';
 import { AVAILABLE_MODELS, DEFAULT_CONFIG } from './constants';
-import { useUserConfig } from '../utils/UserConfigContext';
-import apiFetch from '../utils/apiFetch';
+import { useUserConfig } from '../../utils/UserConfigContext';
+import apiFetch from '../../utils/apiFetch';
 
 export default function ConfigPage() {
     const { refreshConfig } = useUserConfig();

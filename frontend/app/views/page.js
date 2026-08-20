@@ -1,26 +1,15 @@
 'use client'
 
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import SignalForecastTile from './components/signals/SignalForecastTile';
-import ScraperStatusTile from './components/scraper/ScraperStatusTile';
-import TickerDataTile from './components/tickers/TickerDataTile';
-import { useUserConfig } from './utils/UserConfigContext';
+import SignalForecastTile from '../components/signals/SignalForecastTile';
+import ScraperStatusTile from '../components/scraper/ScraperStatusTile';
+import TickerDataTile from '../components/tickers/TickerDataTile';
+import { useUserConfig } from '../utils/UserConfigContext';
 
 export default function Home() {
     const { state: userConfig } = useUserConfig(); // Get user configuration
-    const searchParams = useSearchParams();
-    const key = searchParams.get('key');
 
     return (
         <main className="p-8 bg-gray-900 min-h-screen">
-        {key && (
-            <div className="mb-4">
-                <Link href={`/views?key=${key}`} className="text-sm text-blue-400 hover:text-blue-300">
-                    Go to app &rarr;
-                </Link>
-            </div>
-        )}
         <div className="flex flex-col lg:flex-row gap-6">
             <div className="flex-1">
                 <SignalForecastTile tickers={userConfig.tickers} />

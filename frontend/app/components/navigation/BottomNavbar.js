@@ -9,10 +9,10 @@ export default function BottomNavbar() {
     const pathname = usePathname(); // Pobiera aktywną ścieżkę URL
 
     const tabs = [
-        { name: 'Dashboard', href: '/', icon: faTachometerAlt },
-        { name: 'Benchmark', href: '/benchmark', icon: faChartBar },
-        { name: 'Setup', href: '/setup', icon: faDisplay },
-        { name: 'Config', href: '/config', icon: faCogs },
+        { name: 'Dashboard', href: '/views', icon: faTachometerAlt },
+        { name: 'Benchmark', href: '/views/benchmark', icon: faChartBar },
+        { name: 'Setup', href: '/views/setup', icon: faDisplay },
+        { name: 'Config', href: '/views/config', icon: faCogs },
     ];
 
     return (
