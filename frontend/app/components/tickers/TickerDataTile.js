@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Tile from '../common/Tile';
 import { useUserConfig } from '../../utils/UserConfigContext';
+import apiFetch from '../../utils/apiFetch';
 
 export default function ProcessedTickerDataTile({ styles }) {
     const { state: userConfig, refreshConfig } = useUserConfig();
@@ -44,7 +45,7 @@ export default function ProcessedTickerDataTile({ styles }) {
         setError(null);
         try {
             const tickerQuery = tickers.map((t) => `${t}`).join(',');
-            const response = await fetch(`http://localhost:8000/api/tickers/stock-data/?tickers=${tickerQuery}`);
+            const response = await apiFetch(`/api/tickers/stock-data/?tickers=${tickerQuery}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);

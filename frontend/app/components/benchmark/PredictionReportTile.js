@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import Tile from '../common/Tile';
+import apiFetch from '../../utils/apiFetch';
 
 export default function PredictionReportTile() {
     const [startDate, setStartDate] = useState('');
@@ -16,8 +17,8 @@ export default function PredictionReportTile() {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(
-                `http://localhost:8000/api/signals/prediction-report/?start_date=${startDate}&end_date=${endDate}&tickers=${tickers}`
+            const response = await apiFetch(
+                `/api/signals/prediction-report/?start_date=${startDate}&end_date=${endDate}&tickers=${tickers}`
             );
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);

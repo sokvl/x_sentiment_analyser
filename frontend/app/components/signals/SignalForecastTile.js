@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Tile from '../common/Tile';
 import { useUserConfig } from '../../utils/UserConfigContext';
+import apiFetch from '../../utils/apiFetch';
 
 export default function SignalForecastTile({ date = new Date().toISOString().split('T')[0], tickers }) {
     const { state: userConfig } = useUserConfig();
@@ -23,8 +24,8 @@ export default function SignalForecastTile({ date = new Date().toISOString().spl
             const tickerQuery = tickers.join(',');
             console.log(`Fetching signals for: ${tickerQuery} on ${date} (model: ${used_model}, config: ${config_id})`);
 
-            const response = await fetch(
-                `http://localhost:8000/api/signals/generate/?date=${date}&tickers=${tickerQuery}&used_model=${used_model}&config_id=${config_id}&with_save=false`
+            const response = await apiFetch(
+                `/api/signals/generate/?date=${date}&tickers=${tickerQuery}&used_model=${used_model}&config_id=${config_id}&with_save=false`
             );
 
             if (!response.ok) {

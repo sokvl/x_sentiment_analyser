@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import Tile from '../common/Tile';
 import ModalWithTimer from '../common/ModalWithTimer';
+import apiFetch from '../../utils/apiFetch';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPause, faArrowsRotate, faForward, faSquare } from '@fortawesome/free-solid-svg-icons';
@@ -25,7 +26,7 @@ export default function ScraperStatusTile({ status, website, ticker, tweetCount,
 
     const fetchLogs = async () => {
         try {
-            const response = await fetch('http://localhost:8000/api/scraper/logs/?source=twitter');
+            const response = await apiFetch('/api/scraper/logs/?source=twitter');
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
@@ -42,7 +43,7 @@ export default function ScraperStatusTile({ status, website, ticker, tweetCount,
         setLoading(true);
         setModalMessage(null);
         try {
-            const response = await fetch(`http://localhost:8000/api/scraper/${action.toLowerCase()}/`, {
+            const response = await apiFetch(`/api/scraper/${action.toLowerCase()}/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',

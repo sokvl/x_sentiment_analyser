@@ -4,6 +4,7 @@ import ScraperStatusTile from '../components/scraper/ScraperStatusTile';
 import TickersTile from '../components/tickers/TickersTile';
 import SignalForecastTile from '../components/signals/SignalForecastTile';
 import { useUserConfig } from '../utils/UserConfigContext';
+import apiFetch from '../utils/apiFetch';
 
 export default function SetupPage() {
     const { state: userConfig } = useUserConfig();
@@ -19,7 +20,7 @@ export default function SetupPage() {
         setLoading(true);
         setAlert(null);
         try {
-            const response = await fetch('http://localhost:8000/api/scraper/start/', {
+            const response = await apiFetch('/api/scraper/start/', {
                 method: 'POST',
             });
             if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
@@ -34,7 +35,7 @@ export default function SetupPage() {
 
     const fetchTickers = async () => {
         try {
-            const response = await fetch('http://localhost:8000/api/tickers/tickers/');
+            const response = await apiFetch('/api/tickers/tickers/');
             if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
             const data = await response.json();
             // Ensure we always store an array

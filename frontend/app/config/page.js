@@ -5,6 +5,7 @@ import JsonEditor from '../components/config/JsonEditor';
 import JsonToggle from '../components/config/JsonToggle';
 import { AVAILABLE_MODELS, DEFAULT_CONFIG } from './constants';
 import { useUserConfig } from '../utils/UserConfigContext';
+import apiFetch from '../utils/apiFetch';
 
 export default function ConfigPage() {
     const { refreshConfig } = useUserConfig();
@@ -17,7 +18,7 @@ export default function ConfigPage() {
     const fetchConfig = async () => {
         setLoading(true);
         try {
-            const response = await fetch('http://localhost:8000/api/config/?active=true');
+            const response = await apiFetch('/api/config/?active=true');
             if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
             const data = await response.json();
             if (data.length > 0) {
@@ -71,8 +72,8 @@ export default function ConfigPage() {
         setSaving(true);
         setAlert(null);
         try {
-            const response = await fetch(
-                `http://localhost:8000/api/config/${fullConfig.config_id}/`,
+            const response = await apiFetch(
+                `/api/config/${fullConfig.config_id}/`,
                 {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },

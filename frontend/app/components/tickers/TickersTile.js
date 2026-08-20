@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import Tile from '../common/Tile';
+import apiFetch from '../../utils/apiFetch';
 
 export default function TickersTile({
   configId = 4,
@@ -37,7 +38,7 @@ export default function TickersTile({
           },
         },
       };
-      const response = await fetch(`http://localhost:8000/api/config/${configId}/`, {
+      const response = await apiFetch(`/api/config/${configId}/`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patchBody),

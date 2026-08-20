@@ -1,5 +1,6 @@
 'use client';
 import React, { createContext, useReducer, useContext, useEffect } from 'react';
+import apiFetch from './apiFetch';
 
 const UserConfigContext = createContext();
 
@@ -32,7 +33,7 @@ export const UserConfigProvider = ({ children }) => {
     const fetchActiveConfig = async () => {
         dispatch({ type: 'SET_LOADING' });
         try {
-            const response = await fetch('http://localhost:8000/api/config/?active=true');
+            const response = await apiFetch('/api/config/?active=true');
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }

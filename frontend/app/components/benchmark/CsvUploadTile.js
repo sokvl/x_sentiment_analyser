@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import Tile from '../common/Tile';
 import SentimentAndCandlestickChartTile from './SentimentAndCandlestickChartTile';
 import ModalWithTimer from '../common/ModalWithTimer';
+import apiFetch from '../../utils/apiFetch';
 
 export default function CsvUploadTile() {
     const fileInputRef = useRef(null);
@@ -26,7 +27,7 @@ export default function CsvUploadTile() {
         formData.append('file', file);
 
         try {
-            const response = await fetch('http://localhost:8000/api/signals/process-csv/', {
+            const response = await apiFetch('/api/signals/process-csv/', {
                 method: 'POST',
                 body: formData,
             });
