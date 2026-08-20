@@ -35,4 +35,7 @@ RUN pip install --no-cache-dir -r requirements/req.txt
 COPY . .
 
 EXPOSE 8000
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD gunicorn stocknlp.wsgi:application \
+    --bind 0.0.0.0:8000 \
+    --workers "${GUNICORN_WORKERS:-3}" \
+    --timeout "${GUNICORN_TIMEOUT:-60}"
