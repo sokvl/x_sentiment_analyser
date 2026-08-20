@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { AVAILABLE_FILTERS, AVAILABLE_SOURCES } from '../../config/constants';
+import { AVAILABLE_FILTERS, AVAILABLE_SOURCES } from '../../views/config/constants';
 
 export default function ConfigTile({ config, onConfigChange }) {
   if (!config) return null;
