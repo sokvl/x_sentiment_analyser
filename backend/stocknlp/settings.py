@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
@@ -51,6 +52,8 @@ CORS_ALLOWED_ORIGINS = [
 
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_HEADERS = [*default_headers, 'x-access-key']
 
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
