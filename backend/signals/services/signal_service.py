@@ -110,8 +110,19 @@ class SignalService:
         except Config.DoesNotExist:
             raise ValueError(f"Config with ID {config_id} not found")
 
+        posts_by_ticker_id: dict = {}
+        if tickers:
+            Post = apps.get_model('scraper', 'Post')
+            all_posts = Post.objects.filter(
+                related_ticker__in=tickers,
+                time_stamp__date__range=[start_date, end_date],
+            ).select_related('post_prediction')
+            for post in all_posts:
+                posts_by_ticker_id.setdefault(post.related_ticker_id, []).append(post)
+
+        signals_to_create = []
         for ticker in tickers:
-            posts = self.get_posts_in_range(ticker, start_date, end_date)
+            posts = posts_by_ticker_id.get(ticker.ticker_id, [])
             score = self.calculate_sentiment_score(posts)
             signal_type = self.determine_signal_type(score)
 
@@ -119,19 +130,22 @@ class SignalService:
                 'ticker': ticker.symbol,
                 'signal_type': signal_type,
                 'confidence_score': score,
-                'tweet_count': posts.count(),
+                'tweet_count': len(posts),
                 'date': end_date.isoformat()
             }
 
             if with_save:
-                Signal.objects.create(
+                signals_to_create.append(Signal(
                     signal_type=signal_type,
                     ticker=ticker,
                     confidence_score=score,
                     used_model=used_model,
                     config=config,
-                )
+                ))
 
             results[ticker.symbol] = signal_data
+
+        if signals_to_create:
+            Signal.objects.bulk_create(signals_to_create)
 
         return results

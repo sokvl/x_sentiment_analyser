@@ -1,7 +1,12 @@
+from datetime import timedelta
 from unittest.mock import patch, MagicMock
 
 from django.test import TestCase
+from django.utils import timezone
 
+from scraper.models import Config, Content, Post, PostMeta, PostPrediction
+from tickers.models import Ticker
+from signals.models import Signal
 from signals.services.signal_service import SignalService
 
 
@@ -166,18 +171,20 @@ class GenerateForTickersTests(TestCase):
         mock_config_cls.objects.get.return_value = mock_config
         mock_apps.get_app_config.return_value.get_model.return_value = mock_config_cls
 
+        ticker = MagicMock()
+        ticker.symbol = 'AAPL'
+        ticker.ticker_id = 1
+
         mock_post = MagicMock()
+        mock_post.related_ticker_id = 1
         mock_post.post_prediction.prediction = 2
         mock_post.post_prediction.probabilities = [0.1, 0.2, 0.7]
         mock_qs = MagicMock()
         mock_qs.__iter__ = MagicMock(return_value=iter([mock_post]))
-        mock_qs.count.return_value = 1
         mock_post_cls = MagicMock()
         mock_post_cls.objects.filter.return_value.select_related.return_value = mock_qs
         mock_apps.get_model.return_value = mock_post_cls
 
-        ticker = MagicMock()
-        ticker.symbol = 'AAPL'
         from datetime import date
         results = self.service.generate_for_tickers(
             tickers=[ticker],
@@ -188,10 +195,14 @@ class GenerateForTickersTests(TestCase):
             config_id=1,
         )
 
+        mock_post_cls.objects.filter.assert_called_once_with(
+            related_ticker__in=[ticker],
+            time_stamp__date__range=[date(2024, 1, 1), date(2024, 1, 2)],
+        )
         self.assertIn('AAPL', results)
         self.assertIn('signal_type', results['AAPL'])
         self.assertIn('confidence_score', results['AAPL'])
-        mock_signal.objects.create.assert_not_called()
+        mock_signal.objects.bulk_create.assert_not_called()
 
     @patch('signals.services.signal_service.Signal')
     @patch('signals.services.signal_service.apps')
@@ -203,13 +214,13 @@ class GenerateForTickersTests(TestCase):
 
         mock_qs = MagicMock()
         mock_qs.__iter__ = MagicMock(return_value=iter([]))
-        mock_qs.count.return_value = 0
         mock_post_cls = MagicMock()
         mock_post_cls.objects.filter.return_value.select_related.return_value = mock_qs
         mock_apps.get_model.return_value = mock_post_cls
 
         ticker = MagicMock()
         ticker.symbol = 'TSLA'
+        ticker.ticker_id = 2
         from datetime import date
         self.service.generate_for_tickers(
             tickers=[ticker],
@@ -219,7 +230,9 @@ class GenerateForTickersTests(TestCase):
             with_save=True,
             config_id=1,
         )
-        mock_signal.objects.create.assert_called_once()
+        mock_signal.objects.bulk_create.assert_called_once()
+        created = mock_signal.objects.bulk_create.call_args[0][0]
+        self.assertEqual(len(created), 1)
 
     @patch('signals.services.signal_service.apps')
     def test_raises_when_config_not_found(self, mock_apps):
@@ -237,3 +250,54 @@ class GenerateForTickersTests(TestCase):
                 with_save=False,
                 config_id=999,
             )
+
+
+class GenerateForTickersQueryCountTests(TestCase):
+    def setUp(self):
+        self.service = SignalService()
+        self.config = Config.objects.create(
+            name='test', active=True, config_string={'user_config': {}, 'scrapers_config': []},
+        )
+        self.today = timezone.now().date()
+
+    def _make_ticker_with_post(self, symbol):
+        ticker = Ticker.objects.create(symbol=symbol, type='stock', full_name=symbol)
+        content = Content.objects.create(text=f'{symbol} bullish')
+        meta = PostMeta.objects.create(likes=1)
+        prediction = PostPrediction.objects.create(
+            prediction=2, probabilities=[0.1, 0.2, 0.7], model_name='test',
+        )
+        Post.objects.create(
+            time_stamp=timezone.now(),
+            related_ticker=ticker,
+            related_content=content,
+            post_metadata=meta,
+            post_prediction=prediction,
+        )
+        return ticker
+
+    def _generate(self, tickers, with_save=False):
+        return self.service.generate_for_tickers(
+            tickers=tickers,
+            start_date=self.today - timedelta(days=1),
+            end_date=self.today,
+            used_model='LSTMCNNv1',
+            with_save=with_save,
+            config_id=self.config.config_id,
+        )
+
+    def test_query_count_stays_constant_regardless_of_ticker_count(self):
+        two_tickers = [self._make_ticker_with_post('AAA'), self._make_ticker_with_post('BBB')]
+        with self.assertNumQueries(2):
+            self._generate(two_tickers)
+
+        three_tickers = two_tickers + [self._make_ticker_with_post('CCC')]
+        with self.assertNumQueries(2):
+            self._generate(three_tickers)
+
+    def test_bulk_create_used_for_signal_batch(self):
+        tickers = [self._make_ticker_with_post('DDD'), self._make_ticker_with_post('EEE')]
+        # 1 Config lookup + 1 Post lookup + 1 bulk INSERT, regardless of ticker count.
+        with self.assertNumQueries(3):
+            self._generate(tickers, with_save=True)
+        self.assertEqual(Signal.objects.count(), 2)
