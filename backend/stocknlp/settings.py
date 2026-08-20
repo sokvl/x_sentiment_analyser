@@ -180,6 +180,9 @@ CACHE_TTL_FILE_OUTPUT   = int(os.getenv('CACHE_TTL_FILE_OUTPUT',   60 * 30))   #
 
 MAX_CSV_FILE_SIZE_BYTES = int(os.getenv('MAX_CSV_FILE_SIZE_BYTES', 5 * 1024 * 1024))  # 5 MB
 MAX_CSV_ROWS            = int(os.getenv('MAX_CSV_ROWS',            5000))
+CSV_JOB_TIMEOUT_SECONDS  = int(os.getenv('CSV_JOB_TIMEOUT_SECONDS',  60 * 10))  # 10 minutes
+CSV_ROW_WAIT_CONCURRENCY = int(os.getenv('CSV_ROW_WAIT_CONCURRENCY', 20))
+CSV_JOB_CACHE_TTL        = int(os.getenv('CSV_JOB_CACHE_TTL',        60 * 60))  # 1 hour
 
 # ---------------------------------------------------------------------------
 # Media files

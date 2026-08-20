@@ -6,8 +6,18 @@ from rest_framework.test import APIRequestFactory
 
 from signals.models import Signal
 from signals.views.generation import SignalGenerationView
-from signals.views.csv_views import ProcessCSVView
+from signals.views.csv_views import ProcessCSVView, ProcessCSVJobStatusView
 from signals.views.reporting import PredictionReportView
+
+
+class SyncThread:
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        self.target = target
+        self.args = args
+        self.kwargs = kwargs or {}
+
+    def start(self):
+        self.target(*self.args, **self.kwargs)
 
 
 class SignalGenerationViewTests(TestCase):
@@ -132,9 +142,18 @@ class ProcessCSVViewTests(TestCase):
         response = self.view(request)
         self.assertEqual(response.status_code, 500)
 
+    def test_oversized_file_returns_400(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        with override_settings(MAX_CSV_FILE_SIZE_BYTES=5):
+            file = SimpleUploadedFile('data.csv', b'Date,Ticker,Tweet\n2024-01-01,AAPL,bullish\n', content_type='text/csv')
+            request = self.factory.post('/api/signals/process-csv/', {'file': file}, format='multipart')
+            response = self.view(request)
+        self.assertEqual(response.status_code, 400)
+
+    @patch('signals.views.csv_views.threading.Thread', SyncThread)
     @patch('signals.views.csv_views.CSVProcessingService')
     @patch('signals.views.csv_views.get_data_manager')
-    def test_successful_csv_processing(self, mock_get_dm, mock_csv_svc):
+    def test_successful_csv_processing(self, mock_get_dm, mock_csv_svc, *_):
         mock_get_dm.return_value = (MagicMock(), None)
         mock_csv_svc.return_value.process.return_value = ({'$AAPL': {}}, [])
 
@@ -142,9 +161,65 @@ class ProcessCSVViewTests(TestCase):
         file = SimpleUploadedFile('data.csv', b'Date,Ticker,Tweet\n2024-01-01,AAPL,bullish\n', content_type='text/csv')
         request = self.factory.post('/api/signals/process-csv/', {'file': file}, format='multipart')
         response = self.view(request)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('results', response.data)
-        self.assertIn('errors', response.data)
+        self.assertEqual(response.status_code, 202)
+        self.assertIn('job_id', response.data)
+
+        status_view = ProcessCSVJobStatusView.as_view()
+        status_request = self.factory.get(f'/api/signals/process-csv/{response.data["job_id"]}/')
+        status_response = status_view(status_request, job_id=response.data['job_id'])
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.data['status'], 'succeeded')
+        self.assertEqual(status_response.data['results'], {'$AAPL': {}})
+
+    @patch('signals.views.csv_views.threading.Thread', SyncThread)
+    @patch('signals.views.csv_views.CSVProcessingService')
+    @patch('signals.views.csv_views.get_data_manager')
+    def test_processing_failure_reflected_in_job_status(self, mock_get_dm, mock_csv_svc, *_):
+        mock_get_dm.return_value = (MagicMock(), None)
+        mock_csv_svc.return_value.process.side_effect = ValueError('bad row')
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        file = SimpleUploadedFile('data.csv', b'Date,Ticker,Tweet\n2024-01-01,AAPL,bullish\n', content_type='text/csv')
+        request = self.factory.post('/api/signals/process-csv/', {'file': file}, format='multipart')
+        response = self.view(request)
+
+        status_view = ProcessCSVJobStatusView.as_view()
+        status_request = self.factory.get(f'/api/signals/process-csv/{response.data["job_id"]}/')
+        status_response = status_view(status_request, job_id=response.data['job_id'])
+        self.assertEqual(status_response.data['status'], 'failed')
+        self.assertEqual(status_response.data['error'], 'bad row')
+
+    @patch('signals.views.csv_views.threading.Thread', SyncThread)
+    @patch('signals.views.csv_views.CSVProcessingService')
+    @patch('signals.views.csv_views.get_data_manager')
+    def test_timeout_reflected_in_job_status(self, mock_get_dm, mock_csv_svc, *_):
+        from signals.services.csv_service import CSVProcessingTimeout
+        mock_get_dm.return_value = (MagicMock(), None)
+        exc = CSVProcessingTimeout('too slow')
+        exc.partial = ({'$AAPL': {}}, [{'details': 'partial'}])
+        mock_csv_svc.return_value.process.side_effect = exc
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        file = SimpleUploadedFile('data.csv', b'Date,Ticker,Tweet\n2024-01-01,AAPL,bullish\n', content_type='text/csv')
+        request = self.factory.post('/api/signals/process-csv/', {'file': file}, format='multipart')
+        response = self.view(request)
+
+        status_view = ProcessCSVJobStatusView.as_view()
+        status_request = self.factory.get(f'/api/signals/process-csv/{response.data["job_id"]}/')
+        status_response = status_view(status_request, job_id=response.data['job_id'])
+        self.assertEqual(status_response.data['status'], 'timed_out')
+        self.assertEqual(status_response.data['results'], {'$AAPL': {}})
+
+
+class ProcessCSVJobStatusViewTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.view = ProcessCSVJobStatusView.as_view()
+
+    def test_unknown_job_id_returns_404(self):
+        request = self.factory.get('/api/signals/process-csv/does-not-exist/')
+        response = self.view(request, job_id='does-not-exist')
+        self.assertEqual(response.status_code, 404)
 
 
 class PredictionReportViewTests(TestCase):

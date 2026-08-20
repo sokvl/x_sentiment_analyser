@@ -2,6 +2,8 @@ import csv
 import io
 import json
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Tuple, Union
 import pandas as pd
 from django.utils import timezone
@@ -12,6 +14,11 @@ from ..constants import CSV_BATCH_SIZE, SENTIMENT_WEIGHTS
 from stocknlp.tasks import enqueue_user_data, get_redis
 
 logger = logging.getLogger(__name__)
+
+
+class CSVProcessingTimeout(Exception):
+    pass
+
 
 class CSVProcessingService:
     """
@@ -24,10 +31,14 @@ class CSVProcessingService:
         self.signal_service = SignalService()
         self.redis_client = get_redis()
 
-    def process(self, file_obj: Any, model_id: str | None = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    def process(
+        self, file_obj: Any, model_id: str | None = None, deadline: float | None = None,
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Parses the CSV file and evaluates sentiment for each row using Redis tasks.
-        Returns a tuple of (results, errors).
+        Returns a tuple of (results, errors). If `deadline` (a time.monotonic()
+        cutoff) is exceeded between batches, raises CSVProcessingTimeout with
+        whatever results/errors were accumulated so far attached as .partial.
         """
         results: Dict[str, Any] = {}
         errors: List[Dict[str, Any]] = []
@@ -65,17 +76,29 @@ class CSVProcessingService:
 
                 batch.append(parsed_data)
                 if len(batch) >= CSV_BATCH_SIZE:
+                    if deadline is not None and time.monotonic() > deadline:
+                        exc = CSVProcessingTimeout('CSV processing exceeded its time budget')
+                        exc.partial = (results, errors)
+                        raise exc
+
                     logger.debug('Processing batch of size %d. Total processed rows: %d', len(batch), row_idx)
                     self._process_batch(batch, results, errors, model_id)
                     batch = []
 
             if batch:
+                if deadline is not None and time.monotonic() > deadline:
+                    exc = CSVProcessingTimeout('CSV processing exceeded its time budget')
+                    exc.partial = (results, errors)
+                    raise exc
+
                 logger.debug('Processing final batch of size %d', len(batch))
                 self._process_batch(batch, results, errors, model_id)
 
             self._calculate_scores(results)
             self._add_yfinance_data(results, errors)
 
+        except CSVProcessingTimeout:
+            raise
         except Exception:
             logger.exception("CSV processing failed")
             raise
@@ -113,30 +136,38 @@ class CSVProcessingService:
                 errors.append({'details': f"Error queuing tweet: {e}", 'data': tweet_data})
 
         logger.debug('Waiting for %d results from Redis', len(request_ids))
-        for request_id, tweet_data in request_ids:
-            try:
-                result_raw = self.redis_client.brpop(f'response_queue:{request_id}', timeout=30)
-                if not result_raw:
-                    logger.error('Timeout waiting for request_id: %s', request_id)
-                    raise Exception("Timeout: Result not received from worker in 30s")
 
-                _, data = result_raw
-                result = json.loads(data)
+        def _await_result(request_id):
+            result_raw = self.redis_client.brpop(f'response_queue:{request_id}', timeout=30)
+            if not result_raw:
+                raise Exception("Timeout: Result not received from worker in 30s")
+            _, data = result_raw
+            return json.loads(data)
 
-                date_str = tweet_data['date'].strftime('%Y-%m-%d')
-                ticker = tweet_data['ticker']
+        with ThreadPoolExecutor(max_workers=settings.CSV_ROW_WAIT_CONCURRENCY) as executor:
+            futures = {
+                executor.submit(_await_result, request_id): (request_id, tweet_data)
+                for request_id, tweet_data in request_ids
+            }
+            for future in futures:
+                request_id, tweet_data = futures[future]
+                try:
+                    result = future.result()
 
-                logger.debug('Received result for %s on %s: %s', ticker, date_str, result.get('prediction'))
+                    date_str = tweet_data['date'].strftime('%Y-%m-%d')
+                    ticker = tweet_data['ticker']
 
-                ticker_data = results.setdefault(ticker, {}).setdefault(date_str, {
-                    'probabilities': [],
-                })
+                    logger.debug('Received result for %s on %s: %s', ticker, date_str, result.get('prediction'))
 
-                ticker_data['probabilities'].append(result['predicted_probabilities'])
+                    ticker_data = results.setdefault(ticker, {}).setdefault(date_str, {
+                        'probabilities': [],
+                    })
 
-            except Exception as e:
-                logger.error('Exception while receiving results: %s', e)
-                errors.append({'details': f"Error receiving tweet result: {e}", 'data': tweet_data})
+                    ticker_data['probabilities'].append(result['predicted_probabilities'])
+
+                except Exception as e:
+                    logger.error('Exception while receiving results: %s', e)
+                    errors.append({'details': f"Error receiving tweet result: {e}", 'data': tweet_data})
 
     def _calculate_scores(self, results: Dict[str, Any]):
         logger.debug('Calculating final scores for %d tickers', len(results))
