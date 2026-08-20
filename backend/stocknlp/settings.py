@@ -185,6 +185,12 @@ CSV_ROW_WAIT_CONCURRENCY = int(os.getenv('CSV_ROW_WAIT_CONCURRENCY', 20))
 CSV_JOB_CACHE_TTL        = int(os.getenv('CSV_JOB_CACHE_TTL',        60 * 60))  # 1 hour
 
 # ---------------------------------------------------------------------------
+# External API timeouts
+# ---------------------------------------------------------------------------
+
+YFINANCE_TIMEOUT_SECONDS = int(os.getenv('YFINANCE_TIMEOUT_SECONDS', 10))
+
+# ---------------------------------------------------------------------------
 # Media files
 # ---------------------------------------------------------------------------
 

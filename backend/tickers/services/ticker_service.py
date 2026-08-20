@@ -83,6 +83,7 @@ class TickerService:
                 group_by='ticker',
                 progress=False,
                 auto_adjust=True,
+                timeout=settings.YFINANCE_TIMEOUT_SECONDS,
             )
         except Exception as e:
             logger.exception("yfinance bulk download failed: %s", e)

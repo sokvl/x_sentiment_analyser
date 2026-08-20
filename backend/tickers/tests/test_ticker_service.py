@@ -1,7 +1,10 @@
+import time
 from datetime import date, timedelta
 from unittest.mock import patch, MagicMock
 
+from django.conf import settings
 from django.test import TestCase
+from requests.exceptions import Timeout
 from rest_framework.exceptions import ValidationError, NotFound
 
 from tickers.models import Ticker
@@ -99,6 +102,36 @@ class FetchStockDataTests(TestCase):
         result = self.service.fetch_stock_data(['AAPL'], date(2024, 1, 1), date(2024, 1, 31))
         self.assertIn('AAPL', result)
         mock_yf.download.assert_called_once()
+
+    @patch('django.core.cache.cache')
+    @patch('tickers.services.ticker_service.yf')
+    def test_yfinance_called_with_explicit_timeout(self, mock_yf, mock_cache):
+        mock_cache.get.return_value = None
+        import pandas as pd
+        mock_yf.download.return_value = pd.DataFrame({
+            'Open': [150.0], 'Close': [155.0],
+            'High': [156.0], 'Low': [149.0], 'Volume': [1000000]
+        }, index=pd.DatetimeIndex([date(2024, 1, 2)]))
+
+        self.service.fetch_stock_data(['AAPL'], date(2024, 1, 1), date(2024, 1, 31))
+
+        _, kwargs = mock_yf.download.call_args
+        self.assertIn('timeout', kwargs)
+        self.assertEqual(kwargs['timeout'], settings.YFINANCE_TIMEOUT_SECONDS)
+
+    @patch('django.core.cache.cache')
+    @patch('tickers.services.ticker_service.yf')
+    def test_upstream_timeout_fails_fast_with_clear_error(self, mock_yf, mock_cache):
+        mock_cache.get.return_value = None
+        mock_yf.download.side_effect = Timeout('Read timed out.')
+
+        start = time.monotonic()
+        result = self.service.fetch_stock_data(['AAPL'], date(2024, 1, 1), date(2024, 1, 31))
+        elapsed = time.monotonic() - start
+
+        self.assertLess(elapsed, 1.0)
+        self.assertIn('AAPL', result)
+        self.assertIn('error', result['AAPL'])
 
     @patch('django.core.cache.cache')
     @patch('tickers.services.ticker_service.yf')
