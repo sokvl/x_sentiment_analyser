@@ -149,6 +149,9 @@ RQ_QUEUES = {
     'user_queue': _RQ_BASE,
 }
 
+WORKER_JOB_MAX_RETRIES = int(os.getenv('WORKER_JOB_MAX_RETRIES', 3))
+WORKER_JOB_RETRY_INTERVALS = [10, 30, 90]
+
 # ---------------------------------------------------------------------------
 # Cache (django-redis)
 # ---------------------------------------------------------------------------

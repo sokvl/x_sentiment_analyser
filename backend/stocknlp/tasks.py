@@ -3,12 +3,15 @@ from __future__ import annotations
 import functools
 import json
 import logging
-import time
 import uuid
 from datetime import date
 
+import django_rq
 import redis
 from django.apps import apps
+from django.conf import settings
+from django.utils import timezone
+from rq import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +19,6 @@ logger = logging.getLogger(__name__)
 @functools.lru_cache(maxsize=1)
 def get_redis() -> redis.StrictRedis:
     """Return a shared Redis client, created once on first call."""
-    from django.conf import settings
     host = getattr(settings, 'REDIS_HOST', 'localhost')
     port = int(getattr(settings, 'REDIS_PORT', 6379))
     return redis.StrictRedis(host=host, port=port, db=0)
@@ -27,6 +29,19 @@ def _serialize(obj):
     if isinstance(obj, date):
         return obj.strftime('%Y-%m-%d')
     raise TypeError(f"Type {type(obj)} not serializable")
+
+
+def _retry_policy() -> Retry:
+    return Retry(max=settings.WORKER_JOB_MAX_RETRIES, interval=settings.WORKER_JOB_RETRY_INTERVALS)
+
+
+def _dead_letter(queue_name: str, payload: dict, reason: str) -> None:
+    get_redis().rpush('dead_letter_queue', json.dumps({
+        'queue': queue_name,
+        'payload': payload,
+        'reason': reason,
+        'failed_at': timezone.now().isoformat(),
+    }, default=_serialize))
 
 
 # ---------------------------------------------------------------------------
@@ -40,72 +55,46 @@ def enqueue_user_data(user_data: dict) -> str:
     """
     if 'request_id' not in user_data:
         user_data['request_id'] = str(uuid.uuid4())
-    get_redis().rpush('user_queue', json.dumps(user_data, default=_serialize))
+    django_rq.get_queue('user_queue').enqueue(
+        process_user_job, user_data, retry=_retry_policy(),
+    )
     return user_data['request_id']
 
 
 def enqueue_scraper_data(scraper_data: dict) -> None:
     """Push a background scraper post to the low-priority scraper queue."""
-    get_redis().rpush('scraper_queue', json.dumps(scraper_data, default=_serialize))
+    django_rq.get_queue('scraper_queue').enqueue(
+        process_scraper_job, scraper_data, retry=_retry_policy(),
+    )
 
 
 # ---------------------------------------------------------------------------
-# Consumer  (run via: python manage.py run_llm_worker)
+# Jobs  (run by: python manage.py run_llm_worker)
 # ---------------------------------------------------------------------------
 
-def priority_worker() -> None:
-    """
-    Single-threaded LLM worker:
-      1. Always drain user_queue first (high priority).
-      2. Only process scraper_queue when user_queue is empty.
+def process_user_job(data: dict) -> None:
+    request_id = data['request_id']
+    model_id = data.get('model_id')
+    data_manager = apps.get_app_config('scraper').DATA_MANAGER
 
-    Uses blpop (blocking pop) so the process sleeps when both queues are
-    empty instead of spinning at 100% CPU.
-    Includes exponential backoff on repeated errors to protect against
-    Redis outages or consistently broken payloads.
-    """
-    from django.conf import settings
+    try:
+        result = data_manager.eval_sentiment(data, with_save=False, model_id=model_id)
+    except ValueError as e:
+        logger.warning('Malformed user job payload, sending to dead letter: %s', e)
+        _dead_letter('user_queue', data, str(e))
+        return
 
     client = get_redis()
+    client.rpush(f'response_queue:{request_id}', json.dumps(result, default=_serialize))
+    client.expire(f'response_queue:{request_id}', settings.CACHE_TTL_WORKER_RESULT)
+
+
+def process_scraper_job(data: dict) -> None:
+    model_id = data.get('model_id')
     data_manager = apps.get_app_config('scraper').DATA_MANAGER
-    backoff = 1  # seconds; doubles on each consecutive error, resets on success
 
-    logger.info("LLM worker started. Listening on user_queue → scraper_queue …")
-
-    while True:
-        try:
-            # blpop blocks until at least one queue has data.
-            # Priority: user_queue is listed first — Redis checks left-to-right.
-            result = client.blpop(['user_queue', 'scraper_queue'], timeout=5)
-
-            if result is None:
-                continue
-
-            queue_name, raw = result
-            data = json.loads(raw)
-
-            if queue_name == b'user_queue':
-                request_id = data['request_id']
-                model_id = data.get('model_id')
-                logger.debug("Processing user request %s (model=%s)", request_id, model_id)
-                sentiment_result = data_manager.eval_sentiment(
-                    data, with_save=False, model_id=model_id,
-                )
-                client.rpush(f'response_queue:{request_id}', json.dumps(sentiment_result, default=_serialize))
-                client.expire(f'response_queue:{request_id}', settings.CACHE_TTL_WORKER_RESULT)
-            else:
-                model_id = data.get('model_id')
-                logger.debug("Processing scraper post for ticker %s (model=%s)", data.get('ticker'), model_id or 'default')
-                data_manager.eval_sentiment(data, with_save=True, model_id=model_id)
-
-            backoff = 1  # reset after a successful cycle
-
-        except redis.RedisError as e:
-            logger.error("Redis error: %s — retrying in %ss", e, backoff)
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 60)
-
-        except Exception as e:
-            logger.exception("Unexpected worker error: %s — retrying in %ss", e, backoff)
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+    try:
+        data_manager.eval_sentiment(data, with_save=True, model_id=model_id)
+    except ValueError as e:
+        logger.warning('Malformed scraper job payload, sending to dead letter: %s', e)
+        _dead_letter('scraper_queue', data, str(e))
