@@ -1,4 +1,5 @@
 import time
+from datetime import date
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -35,6 +36,15 @@ def tweet_html(like=None, retweet=None, reply=None, views_aria_label=None) -> st
         {views}
     </article>
     """
+
+
+def make_tweet_article(text: str, date_str: str) -> str:
+    return f'''
+    <article data-testid="tweet">
+        <div lang="en">{text}</div>
+        <time datetime="{date_str}T12:00:00.000Z"></time>
+    </article>
+    '''
 
 
 class ExtractTweetMetadataTests(SimpleTestCase):
@@ -166,3 +176,161 @@ class ScrollAndCollectMaxTimeRunningTests(SimpleTestCase):
         # state stayed IDLE (never transitioned to STOPPED via self.stop()),
         # proving _max_time_running_exceeded never fired here.
         self.assertEqual(self.scraper.state, ScraperStates.IDLE)
+
+
+class LoadConfigModeTests(SimpleTestCase):
+    def setUp(self):
+        self.scraper = make_scraper()
+
+    def _mock_db_config(self, mock_apps, scrapers_config):
+        mock_config_obj = MagicMock()
+        mock_config_obj.config_id = 1
+        mock_config_obj.config_string = {
+            'user_config': {'tickers': ['AAPL']},
+            'scrapers_config': [scrapers_config],
+        }
+        mock_apps.get_app_config.return_value.get_model.return_value.objects.get.return_value = mock_config_obj
+
+    @patch('scraper.scrapers.twitter_scraper.apps')
+    def test_reads_valid_mode_from_db_config(self, mock_apps):
+        self._mock_db_config(mock_apps, {'mode': 'crawling'})
+        self.scraper.load_config()
+        self.assertEqual(self.scraper.config['mode'], 'crawling')
+
+    @patch('scraper.scrapers.twitter_scraper.apps')
+    def test_unrecognized_mode_falls_back_to_gathering(self, mock_apps):
+        self._mock_db_config(mock_apps, {'mode': 'nonsense'})
+        self.scraper.load_config()
+        self.assertEqual(self.scraper.config['mode'], 'gathering')
+
+    @patch('scraper.scrapers.twitter_scraper.apps')
+    def test_missing_mode_defaults_to_gathering(self, mock_apps):
+        self._mock_db_config(mock_apps, {})
+        self.scraper.load_config()
+        self.assertEqual(self.scraper.config['mode'], 'gathering')
+
+
+class TweetAlreadyExistsTests(SimpleTestCase):
+    def setUp(self):
+        self.scraper = make_scraper()
+        self.tweet_data = {'date': date(2026, 8, 20), 'text': 'bullish on AAPL'}
+
+    def _mock_models(self, mock_apps, ticker_obj, post_exists):
+        mock_ticker_cls = MagicMock()
+        mock_ticker_cls.objects.filter.return_value.first.return_value = ticker_obj
+        mock_post_cls = MagicMock()
+        mock_post_cls.objects.filter.return_value.exists.return_value = post_exists
+
+        def get_model(app_label, model_name):
+            return mock_ticker_cls if model_name == 'Ticker' else mock_post_cls
+
+        mock_apps.get_model.side_effect = get_model
+        return mock_post_cls
+
+    @patch('scraper.scrapers.twitter_scraper.apps')
+    def test_unknown_ticker_returns_false(self, mock_apps):
+        self._mock_models(mock_apps, ticker_obj=None, post_exists=True)
+        self.assertFalse(self.scraper._tweet_already_exists('$AAPL', self.tweet_data))
+
+    @patch('scraper.scrapers.twitter_scraper.apps')
+    def test_matching_post_returns_true(self, mock_apps):
+        ticker_obj = MagicMock()
+        mock_post_cls = self._mock_models(mock_apps, ticker_obj=ticker_obj, post_exists=True)
+
+        result = self.scraper._tweet_already_exists('$AAPL', self.tweet_data)
+
+        self.assertTrue(result)
+        mock_post_cls.objects.filter.assert_called_once_with(
+            related_ticker=ticker_obj,
+            time_stamp=date(2026, 8, 20),
+            related_content__text='bullish on AAPL',
+        )
+
+    @patch('scraper.scrapers.twitter_scraper.apps')
+    def test_no_matching_post_returns_false(self, mock_apps):
+        ticker_obj = MagicMock()
+        self._mock_models(mock_apps, ticker_obj=ticker_obj, post_exists=False)
+        self.assertFalse(self.scraper._tweet_already_exists('$AAPL', self.tweet_data))
+
+
+class ScrollAndCollectLatestTests(SimpleTestCase):
+    def setUp(self):
+        growing_scroll_height.height = 0
+        self.sleep_patcher = patch('scraper.scrapers.twitter_scraper.time.sleep')
+        self.sleep_patcher.start()
+        self.addCleanup(self.sleep_patcher.stop)
+
+        self.scraper = make_scraper({'max_time_running': None})
+        self.scraper._run_started_at = time.time()
+        self.scraper.instance = MagicMock()
+        self.scraper.instance.execute_script.side_effect = growing_scroll_height
+
+    def test_stops_at_date_boundary(self):
+        target_date = date(2026, 8, 20)
+        html = (
+            make_tweet_article('new tweet 1', '2026-08-20')
+            + make_tweet_article('new tweet 2', '2026-08-19')
+            + make_tweet_article('too old', '2026-08-17')
+        )
+        self.scraper.instance.page_source = f'<html>{html}</html>'
+
+        with patch.object(self.scraper, '_tweet_already_exists', return_value=False):
+            count = self.scraper._scroll_and_collect_latest('$AAPL', target_date)
+
+        self.assertEqual(count, 2)
+
+    def test_stops_when_tweet_already_known(self):
+        target_date = date(2026, 8, 20)
+        html = (
+            make_tweet_article('new tweet 1', '2026-08-20')
+            + make_tweet_article('known tweet', '2026-08-20')
+            + make_tweet_article('would-be-new but after known', '2026-08-20')
+        )
+        self.scraper.instance.page_source = f'<html>{html}</html>'
+
+        calls = {'n': 0}
+
+        def already_exists(ticker, tweet_data):
+            calls['n'] += 1
+            return calls['n'] == 2
+
+        with patch.object(self.scraper, '_tweet_already_exists', side_effect=already_exists):
+            count = self.scraper._scroll_and_collect_latest('$AAPL', target_date)
+
+        self.assertEqual(count, 1)
+
+
+class RunProcedureModeDispatchTests(SimpleTestCase):
+    def _make_runnable_scraper(self, mode):
+        scraper = make_scraper({
+            'mode': mode,
+            'crawl_interval': 0,
+            'max_time_running': None,
+            'twitter_query': {'params': {'ticker': ['AAPL']}},
+        })
+        scraper.load_config = MagicMock()
+        scraper._setup_instances = MagicMock()
+        scraper._is_logged_in = MagicMock(return_value=True)
+        return scraper
+
+    @patch('scraper.scrapers.twitter_scraper.time.sleep')
+    def test_crawling_mode_calls_crawling_cycle(self, mock_sleep):
+        scraper = self._make_runnable_scraper('crawling')
+        scraper._run_crawling_cycle = MagicMock(side_effect=lambda tickers: scraper.stop_event.set())
+        scraper._run_gathering_cycle = MagicMock()
+
+        scraper.run_procedure()
+
+        scraper._run_crawling_cycle.assert_called_once_with(['AAPL'])
+        scraper._run_gathering_cycle.assert_not_called()
+
+    @patch('scraper.scrapers.twitter_scraper.time.sleep')
+    def test_gathering_mode_calls_gathering_cycle(self, mock_sleep):
+        scraper = self._make_runnable_scraper('gathering')
+        scraper._run_gathering_cycle = MagicMock(side_effect=lambda tickers: scraper.stop_event.set())
+        scraper._run_crawling_cycle = MagicMock()
+
+        scraper.run_procedure()
+
+        scraper._run_gathering_cycle.assert_called_once_with(['AAPL'])
+        scraper._run_crawling_cycle.assert_not_called()

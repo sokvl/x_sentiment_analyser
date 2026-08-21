@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import queue
@@ -36,6 +37,7 @@ class TwitterScraper(Scraper):
 
     # Fallback defaults — used when no active Config exists in the DB.
     _DEFAULT_CONFIG = {
+        'mode': 'gathering',
         'crawl_interval': 60,
         'source': [{'name': 'twitter', 'base_url': 'https://x.com/search?q='}],
         'max_time_running': None,
@@ -70,6 +72,7 @@ class TwitterScraper(Scraper):
         yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
         defaults = cls._DEFAULT_CONFIG
         return {
+            'mode': defaults['mode'],
             'crawl_interval': defaults['crawl_interval'],
             'source': defaults['source'],
             'credentials': cls._get_credentials(),
@@ -102,7 +105,12 @@ class TwitterScraper(Scraper):
             fb_tq = fallback['twitter_query']
             fb_params = fb_tq['params']
 
+            mode = scrapers_config.get('mode', fallback['mode'])
+            if mode not in ('gathering', 'crawling'):
+                mode = fallback['mode']
+
             self.config = {
+                'mode': mode,
                 'crawl_interval': scrapers_config.get('crawl_interval', fallback['crawl_interval']),
                 'source': scrapers_config.get('source', fallback['source']),
                 'credentials': self._get_credentials(),
@@ -176,10 +184,6 @@ class TwitterScraper(Scraper):
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
             chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
             chrome_options.add_experimental_option('useAutomationExtension', False)
-            chrome_options.add_argument(
-                'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-            )
 
             scraper_mode = os.getenv('SCRAPER_MODE', 'grid')
             grid_url = getattr(django_settings, 'SELENIUM_GRID_URL', None)
@@ -194,10 +198,20 @@ class TwitterScraper(Scraper):
                 )
                 self._log(LogTypes.MESSAGE, f'Connected to Selenium Grid at {grid_url}')
 
-            # Remove navigator.webdriver flag via CDP
-            self.instance.execute_script(
-                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-            )
+            if not hasattr(self.instance, 'execute_cdp_cmd'):
+                self.instance.command_executor._commands['executeCdpCommand'] = (
+                    'POST', '/session/$sessionId/chromium/send_command_and_get_result',
+                )
+                self.instance.execute('executeCdpCommand', {
+                    'cmd': 'Page.addScriptToEvaluateOnNewDocument',
+                    'params': {
+                        'source': "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})",
+                    },
+                })
+            else:
+                self.instance.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+                    'source': "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})",
+                })
         except Exception as e:
             self._log(LogTypes.ERROR, f"Failed to setup driver instance: {e}")
             raise
@@ -304,6 +318,42 @@ class TwitterScraper(Scraper):
         except Exception:
             self._log(LogTypes.MESSAGE, 'No cookie banner found, continuing.')
 
+    def _load_session_cookies(self) -> bool:
+        cookies_path = os.getenv('TWITTER_COOKIES_PATH')
+        if not cookies_path or not os.path.exists(cookies_path):
+            return False
+
+        try:
+            with open(cookies_path) as f:
+                cookies = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            self._log(LogTypes.WARNING, f'Could not read cookies file: {e}')
+            return False
+
+        same_site_map = {'no_restriction': 'None', 'lax_mode': 'Lax', 'strict': 'Strict'}
+        for cookie in cookies:
+            selenium_cookie = {
+                'name': cookie['name'],
+                'value': cookie['value'],
+                'domain': cookie.get('domain', '.x.com'),
+                'path': cookie.get('path', '/'),
+                'secure': cookie.get('secure', True),
+            }
+            expiry = cookie.get('expirationDate', cookie.get('expiry'))
+            if expiry is not None:
+                selenium_cookie['expiry'] = int(expiry)
+            same_site = cookie.get('sameSite')
+            if same_site:
+                selenium_cookie['sameSite'] = same_site_map.get(same_site.lower(), same_site)
+            try:
+                self.instance.add_cookie(selenium_cookie)
+            except Exception as e:
+                self._log(LogTypes.WARNING, f"Could not add cookie '{cookie.get('name')}': {e}")
+
+        self.instance.get('https://x.com/home')
+        time.sleep(3)
+        return True
+
     def _login_twitter(self) -> None:
         login_mode = os.getenv('LOGIN_MODE', 'auto')
 
@@ -311,6 +361,10 @@ class TwitterScraper(Scraper):
         self.instance.get('https://x.com')
         time.sleep(3)
         self._accept_cookies()
+
+        if self._load_session_cookies() and self._is_logged_in():
+            self._log(LogTypes.MESSAGE, 'Logged in via imported browser cookies.')
+            return
 
         if login_mode == 'manual':
             # Navigate to login page and wait for user
@@ -461,11 +515,10 @@ class TwitterScraper(Scraper):
 
         return count
 
-    def _scrape_ticker(self, ticker: str, since_date: str, until_date: str) -> int:
-        """Search for a single ticker on a single day and collect all tweets.
-
-        Returns the number of tweets found.
-        """
+    def _scrape_ticker(
+        self, ticker: str, since_date: str, until_date: str,
+        collector=None, force_latest: bool = False,
+    ) -> int:
         queries = self._generate_twitter_query(
             ticker=ticker, since_date=since_date, until_date=until_date,
         )
@@ -474,12 +527,100 @@ class TwitterScraper(Scraper):
             return 0
 
         url = self.config['source'][0]['base_url'] + quote_plus(queries[0])
+        if force_latest:
+            url += '&f=live'
         self.instance.get(url)
         WebDriverWait(self.instance, 10).until(
             lambda d: d.execute_script('return document.readyState') == 'complete',
         )
 
-        return self._scroll_and_collect(ticker)
+        collector = collector or self._scroll_and_collect
+        return collector(ticker)
+
+    def _tweet_already_exists(self, ticker: str, tweet_data: dict) -> bool:
+        Ticker = apps.get_model('tickers', 'Ticker')
+        Post = apps.get_model('scraper', 'Post')
+
+        ticker_obj = Ticker.objects.filter(symbol=ticker).first()
+        if ticker_obj is None:
+            return False
+
+        return Post.objects.filter(
+            related_ticker=ticker_obj,
+            time_stamp=tweet_data['date'],
+            related_content__text=tweet_data['text'],
+        ).exists()
+
+    def _scroll_and_collect_latest(self, ticker: str, target_date) -> int:
+        count = 0
+        seen: set[tuple[str, str]] = set()
+        oldest_allowed = target_date - timedelta(days=1)
+        last_height = self.instance.execute_script('return document.body.scrollHeight')
+
+        while True:
+            if self.stop_event.is_set():
+                break
+            if self._max_time_running_exceeded():
+                self._stop_for_max_time_running()
+                break
+
+            self.instance.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+            time.sleep(5)
+            new_height = self.instance.execute_script('return document.body.scrollHeight')
+
+            if new_height == last_height:
+                break
+
+            last_height = new_height
+            page_source = self.instance.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+            articles = soup.find_all('article', {'data-testid': 'tweet'})
+
+            stop_requested = False
+            for article in articles:
+                try:
+                    tweet_data = self._parse_tweet(article, ticker)
+                    if tweet_data is None:
+                        continue
+
+                    fingerprint = (tweet_data['text'], str(tweet_data['date']))
+                    if fingerprint in seen:
+                        continue
+                    seen.add(fingerprint)
+
+                    if tweet_data['date'] < oldest_allowed:
+                        stop_requested = True
+                        break
+
+                    if self._tweet_already_exists(ticker, tweet_data):
+                        stop_requested = True
+                        break
+
+                    enqueue_scraper_data(tweet_data)
+                    count += 1
+                    self._update_task({'count': count})
+                except KeyError as e:
+                    self._log(LogTypes.ERROR, f'Missing key while processing tweet: {e}')
+                except ValueError as e:
+                    self._log(LogTypes.ERROR, f'Value error processing tweet: {e}')
+                except Exception as e:
+                    self._log(LogTypes.ERROR, f'Unexpected error processing tweet: {e}')
+
+            if stop_requested:
+                break
+
+        return count
+
+    def _crawl_ticker(self, ticker: str) -> int:
+        today = datetime.now().date()
+        since_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+        until_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+
+        return self._scrape_ticker(
+            ticker, since_date, until_date,
+            collector=lambda t: self._scroll_and_collect_latest(t, today),
+            force_latest=True,
+        )
 
     def _wait_if_paused(self) -> bool:
         """Block while paused. Returns False if stop was requested during the wait."""
@@ -500,6 +641,71 @@ class TwitterScraper(Scraper):
         )
         self.stop()
 
+    def _run_gathering_cycle(self, tickers_list: list[str]) -> None:
+        dates_pipeline = self._gen_dates_pipeline()
+
+        while not dates_pipeline.empty() and not self.stop_event.is_set():
+            if self._max_time_running_exceeded():
+                self._stop_for_max_time_running()
+                break
+
+            current_date = dates_pipeline.get()
+            next_date = (
+                datetime.strptime(current_date, '%Y-%m-%d') + timedelta(days=1)
+            ).strftime('%Y-%m-%d')
+
+            self._log(LogTypes.MESSAGE, f'Scraping date: {current_date}')
+
+            for ticker in tickers_list:
+                if self.stop_event.is_set():
+                    break
+                if self._max_time_running_exceeded():
+                    self._stop_for_max_time_running()
+                    break
+                if not self._wait_if_paused():
+                    break
+
+                self._update_task({
+                    'source': self.config['source'][0]['name'],
+                    'date': current_date,
+                    'ticker': ticker,
+                    'count': 0,
+                }, overwrite=True)
+
+                count = self._scrape_ticker(ticker, current_date, next_date)
+                self._log(
+                    LogTypes.MESSAGE,
+                    f"Found {count} tweets for '{ticker}' on {current_date}",
+                )
+
+        if not self.stop_event.is_set():
+            time.sleep(self.config['crawl_interval'])
+
+    def _run_crawling_cycle(self, tickers_list: list[str]) -> None:
+        for ticker in tickers_list:
+            if self.stop_event.is_set():
+                break
+            if self._max_time_running_exceeded():
+                self._stop_for_max_time_running()
+                break
+            if not self._wait_if_paused():
+                break
+
+            self._update_task({
+                'source': self.config['source'][0]['name'],
+                'ticker': ticker,
+                'count': 0,
+            }, overwrite=True)
+
+            count = self._crawl_ticker(ticker)
+            self._log(
+                LogTypes.MESSAGE,
+                f"Found {count} new tweets for '{ticker}' while crawling",
+            )
+
+        if not self.stop_event.is_set():
+            time.sleep(self.config['crawl_interval'])
+
     def run_procedure(self, crawling_mode=True):
         self.load_config()
         self._setup_instances()
@@ -517,47 +723,11 @@ class TwitterScraper(Scraper):
                 break
 
             if crawling_mode and self.state == ScraperStates.RUNNING:
-                dates_pipeline = self._gen_dates_pipeline()
                 tickers_list = self.config['twitter_query']['params']['ticker']
-
-                while not dates_pipeline.empty() and not self.stop_event.is_set():
-                    if self._max_time_running_exceeded():
-                        self._stop_for_max_time_running()
-                        break
-
-                    current_date = dates_pipeline.get()
-                    next_date = (
-                        datetime.strptime(current_date, '%Y-%m-%d') + timedelta(days=1)
-                    ).strftime('%Y-%m-%d')
-
-                    self._log(LogTypes.MESSAGE, f'Scraping date: {current_date}')
-
-                    for ticker in tickers_list:
-                        if self.stop_event.is_set():
-                            break
-                        if self._max_time_running_exceeded():
-                            self._stop_for_max_time_running()
-                            break
-                        if not self._wait_if_paused():
-                            break
-
-                        self._update_task({
-                            'source': self.config['source'][0]['name'],
-                            'date': current_date,
-                            'ticker': ticker,
-                            'count': 0,
-                        }, overwrite=True)
-
-                        count = self._scrape_ticker(ticker, current_date, next_date)
-                        self._log(
-                            LogTypes.MESSAGE,
-                            f"Found {count} tweets for '{ticker}' on {current_date}",
-                        )
-
-                # All dates exhausted — wait before next crawl cycle
-                if not self.stop_event.is_set():
-                    time.sleep(self.config['crawl_interval'])
-
+                if self.config.get('mode') == 'crawling':
+                    self._run_crawling_cycle(tickers_list)
+                else:
+                    self._run_gathering_cycle(tickers_list)
             else:
                 time.sleep(1)
 
