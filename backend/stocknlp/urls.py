@@ -22,6 +22,7 @@ from django.urls import path
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('django-rq/', include('django_rq.urls')),
     path('api/', include('scraper.urls')),
     path('api/tickers/', include('tickers.urls')),
     path('api/signals/', include('signals.urls')),
