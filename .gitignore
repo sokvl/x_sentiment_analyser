@@ -125,6 +125,7 @@ celerybeat.pid
 
 # Environments
 .env
+twitter_cookies.json
 .venv
 env/
 venv/
@@ -167,3 +168,5 @@ cython_debug/
 .vscode/
 backend/backend_env/
 x_sentiment_analyser.code-workspace
+
+Notes.md
