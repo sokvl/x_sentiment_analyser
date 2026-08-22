@@ -301,3 +301,42 @@ class GenerateForTickersQueryCountTests(TestCase):
         with self.assertNumQueries(3):
             self._generate(tickers, with_save=True)
         self.assertEqual(Signal.objects.count(), 2)
+
+
+class GetAllPostsInRangeTests(TestCase):
+    def setUp(self):
+        self.service = SignalService()
+        self.today = timezone.now().date()
+
+    def _make_post(self, symbol, when):
+        ticker = Ticker.objects.create(symbol=symbol, type='stock', full_name=symbol)
+        content = Content.objects.create(text=f'{symbol} bullish')
+        meta = PostMeta.objects.create(likes=1)
+        prediction = PostPrediction.objects.create(
+            prediction=2, probabilities=[0.1, 0.2, 0.7], model_name='test',
+        )
+        return Post.objects.create(
+            time_stamp=when,
+            related_ticker=ticker,
+            related_content=content,
+            post_metadata=meta,
+            post_prediction=prediction,
+        )
+
+    def test_returns_posts_across_tickers_within_range(self):
+        self._make_post('AAA', timezone.now())
+        self._make_post('BBB', timezone.now())
+        posts = self.service.get_all_posts_in_range(self.today, self.today)
+        self.assertEqual(posts.count(), 2)
+
+    def test_excludes_posts_outside_range(self):
+        self._make_post('AAA', timezone.now() - timedelta(days=10))
+        posts = self.service.get_all_posts_in_range(self.today, self.today)
+        self.assertEqual(posts.count(), 0)
+
+    def test_includes_range_boundaries(self):
+        self._make_post('AAA', timezone.now() - timedelta(days=2))
+        posts = self.service.get_all_posts_in_range(
+            self.today - timedelta(days=2), self.today,
+        )
+        self.assertEqual(posts.count(), 1)

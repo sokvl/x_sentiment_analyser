@@ -4,7 +4,8 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    PredictionReportView, ProcessCSVView, ProcessCSVJobStatusView, SignalListView, UploadedFileViewSet,
+    MarketOptimismIndexView, PredictionReportView, ProcessCSVView, ProcessCSVJobStatusView,
+    SignalListView, UploadedFileViewSet,
 )
 from signals.views.generation import SignalGenerationView
 
@@ -17,5 +18,6 @@ urlpatterns = [
     path('process-csv/', ProcessCSVView.as_view(), name='signal-process-csv'),
     path('process-csv/<str:job_id>/', ProcessCSVJobStatusView.as_view(), name='signal-process-csv-status'),
     path('prediction-report/', PredictionReportView.as_view(), name='signal-prediction-report'),
+    path('market-index/', MarketOptimismIndexView.as_view(), name='signal-market-index'),
     path('', include(router.urls)),
 ]

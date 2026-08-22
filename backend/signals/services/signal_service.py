@@ -40,6 +40,15 @@ class SignalService:
             time_stamp__date__range=[start_date, end_date]
         ).select_related('post_prediction')
 
+    def get_all_posts_in_range(self, start_date: Any, end_date: Any) -> QuerySet:
+        """
+        Retrieves posts across all tickers within a date range.
+        """
+        Post = apps.get_model('scraper', 'Post')
+        return Post.objects.filter(
+            time_stamp__date__range=[start_date, end_date],
+        ).select_related('post_prediction')
+
     def calculate_sentiment_score(self, posts) -> float:
         """
         Calculates a weighted sentiment score using the full probability
