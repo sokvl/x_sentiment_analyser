@@ -37,7 +37,7 @@ export default function Home() {
             </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 max-w-md">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
             <SentimentIndexTwitterTile />
             <SentimentIndexNewsTile />
         </div>
