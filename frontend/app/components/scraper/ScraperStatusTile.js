@@ -74,6 +74,7 @@ export default function ScraperStatusTile({ status, website, ticker, tweetCount,
     };
 
     useEffect(() => {
+        fetchLogs();
         const id = setInterval(() => {
             fetchLogs();
         }, 10000);
