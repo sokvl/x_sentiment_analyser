@@ -5,6 +5,11 @@ import { useSearchParams } from 'next/navigation';
 import SignalForecastTile from './components/signals/SignalForecastTile';
 import ScraperStatusTile from './components/scraper/ScraperStatusTile';
 import TickerDataTile from './components/tickers/TickerDataTile';
+import TweetTestTile from './components/dashboard/TweetTestTile';
+import LiveTweetsFeedTile from './components/dashboard/LiveTweetsFeedTile';
+import LiveNewsFeedTile from './components/dashboard/LiveNewsFeedTile';
+import SentimentIndexTwitterTile from './components/dashboard/SentimentIndexTwitterTile';
+import SentimentIndexNewsTile from './components/dashboard/SentimentIndexNewsTile';
 import { useUserConfig } from './utils/UserConfigContext';
 
 export default function Home() {
@@ -13,20 +18,26 @@ export default function Home() {
     const key = searchParams.get('key');
 
     return (
-        <main className="p-8 bg-gray-900 min-h-screen">
+        <main className="p-6 bg-gray-900 min-h-screen">
         {key && (
-            <div className="mb-4">
+            <div className="mb-3">
                 <Link href={`/views?key=${key}`} className="text-sm text-blue-400 hover:text-blue-300">
                     Go to app &rarr;
                 </Link>
             </div>
         )}
-        <div className="flex flex-col lg:flex-row gap-6">
-            <div className="flex-1">
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="max-h-64 overflow-y-auto">
                 <SignalForecastTile tickers={userConfig.tickers} />
-                <TickerDataTile styles={'my-2'}/>
             </div>
-        <div className="flex-1 max-w-sm">
+            <div className="max-h-64 overflow-y-auto">
+                <TickerDataTile styles="" />
+            </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <TweetTestTile />
             <ScraperStatusTile
                 status="RUNNING"
                 website="x.com"
@@ -35,8 +46,16 @@ export default function Home() {
                 buttonsVisible={false}
             />
         </div>
-    </div>
-</main>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <LiveTweetsFeedTile />
+            <LiveNewsFeedTile />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 max-w-md">
+            <SentimentIndexTwitterTile />
+            <SentimentIndexNewsTile />
+        </div>
+        </main>
     );
 }
