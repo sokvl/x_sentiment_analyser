@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation';
 import SignalForecastTile from './components/signals/SignalForecastTile';
 import ScraperStatusTile from './components/scraper/ScraperStatusTile';
 import TickerDataTile from './components/tickers/TickerDataTile';
-import TweetTestTile from './components/dashboard/TweetTestTile';
 import LiveTweetsFeedTile from './components/dashboard/LiveTweetsFeedTile';
 import LiveNewsFeedTile from './components/dashboard/LiveNewsFeedTile';
 import SentimentIndexTwitterTile from './components/dashboard/SentimentIndexTwitterTile';
@@ -37,7 +36,6 @@ export default function Home() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <TweetTestTile />
             <ScraperStatusTile
                 status="RUNNING"
                 website="x.com"
@@ -45,11 +43,10 @@ export default function Home() {
                 tweetCount={123}
                 buttonsVisible={false}
             />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <LiveTweetsFeedTile />
-            <LiveNewsFeedTile />
+            <div className="flex flex-col gap-4">
+                <LiveTweetsFeedTile />
+                <LiveNewsFeedTile />
+            </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 max-w-md">

@@ -13,13 +13,13 @@ class EvalView(APIView):
     def post(self, request):
         serializer = EvalRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         service = DataService()
         result = service.evaluate_sentiment(
-            serializer.validated_data, 
+            serializer.validated_data,
             with_save=serializer.validated_data.get('with_save', False)
         )
-        
+
         response_serializer = EvalResponseSerializer(result)
         return Response(response_serializer.data)
 
