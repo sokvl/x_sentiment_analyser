@@ -6,11 +6,12 @@ from django.core.cache import cache
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from stocknlp.permissions import ActionPermissionsMixin, IsOwner, IsOwnerOrHasInterviewerKey
 from ..models import UploadedFile
 from ..serializers import UploadedFileSerializer
 from ..services.csv_service import CSVProcessingService
-from ..utils import get_data_manager
+from ..utils import get_data_manager, log_and_get_safe_message
 
 
 class UploadedFileViewSet(ActionPermissionsMixin, viewsets.ModelViewSet):
@@ -22,6 +23,7 @@ class UploadedFileViewSet(ActionPermissionsMixin, viewsets.ModelViewSet):
     queryset = UploadedFile.objects.all()
     serializer_class = UploadedFileSerializer
     http_method_names = ['get', 'post', 'patch', 'delete']
+    throttle_scope = 'csv_upload'
 
     action_permission_classes = {
         'list': [IsOwnerOrHasInterviewerKey],
@@ -32,6 +34,11 @@ class UploadedFileViewSet(ActionPermissionsMixin, viewsets.ModelViewSet):
         'preview': [IsOwnerOrHasInterviewerKey],
         'run': [IsOwnerOrHasInterviewerKey],
     }
+
+    def get_throttles(self):
+        if self.action in ('create', 'run'):
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -117,7 +124,5 @@ class UploadedFileViewSet(ActionPermissionsMixin, viewsets.ModelViewSet):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response(
-                {'error': 'Error processing CSV file', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            message = log_and_get_safe_message(e, 'CSV file run failed')
+            return Response({'error': message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

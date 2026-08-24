@@ -9,6 +9,7 @@ class EvalView(APIView):
     On-demand sentiment evaluation.
     """
     permission_classes = [IsOwner]
+    throttle_scope = 'eval'
 
     def post(self, request):
         serializer = EvalRequestSerializer(data=request.data)

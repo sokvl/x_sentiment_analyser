@@ -68,6 +68,7 @@ class ProcessCSVView(APIView):
     background thread; poll ProcessCSVJobStatusView with the returned job_id.
     """
     permission_classes = [IsOwnerOrHasInterviewerKey]
+    throttle_scope = 'csv_upload'
 
     def post(self, request):
         file = request.FILES.get('file')

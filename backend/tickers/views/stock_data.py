@@ -10,6 +10,7 @@ class StockDataView(APIView):
     DRF automatically handles NotFound (404) and ValidationError (400).
     """
     permission_classes = [IsOwnerOrHasInterviewerKey]
+    throttle_scope = 'stock_data'
 
     def get(self, request):
         tickers_param = request.query_params.get('tickers', 'all')
