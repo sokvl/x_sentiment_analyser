@@ -180,6 +180,7 @@ CACHES = {
 # ---------------------------------------------------------------------------
 
 CACHE_TTL_STOCK_DATA    = int(os.getenv('CACHE_TTL_STOCK_DATA',    60 * 60))   # 1 hour
+CACHE_TTL_NEWS          = int(os.getenv('CACHE_TTL_NEWS',          60 * 10))   # 10 minutes
 CACHE_TTL_PREDICTIONS   = int(os.getenv('CACHE_TTL_PREDICTIONS',   60 * 10))   # 10 minutes
 CACHE_TTL_WORKER_RESULT = int(os.getenv('CACHE_TTL_WORKER_RESULT', 60 * 5))    # 5 minutes
 CACHE_TTL_FILE_OUTPUT   = int(os.getenv('CACHE_TTL_FILE_OUTPUT',   60 * 30))   # 30 minutes
@@ -199,6 +200,10 @@ CSV_JOB_CACHE_TTL        = int(os.getenv('CSV_JOB_CACHE_TTL',        60 * 60))  
 # ---------------------------------------------------------------------------
 
 YFINANCE_TIMEOUT_SECONDS = int(os.getenv('YFINANCE_TIMEOUT_SECONDS', 10))
+
+FINNHUB_API_KEY = os.getenv('FINNHUB_APIKEY')
+FINNHUB_TIMEOUT_SECONDS = int(os.getenv('FINNHUB_TIMEOUT_SECONDS', 10))
+FINNHUB_FETCH_INTERVAL_SECONDS = int(os.getenv('FINNHUB_FETCH_INTERVAL_SECONDS', 60 * 60))
 
 # ---------------------------------------------------------------------------
 # Ticker reference data

@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
+from django.db import DatabaseError
 from django.test import TestCase
 
 from scraper.managers.data_manager.data_manager import DataManager, ModelPredictionError
+from scraper.models import NewsPost
 
 
 class DataManagerEvalSentimentTests(TestCase):
@@ -140,3 +143,74 @@ class DataManagerEvalSentimentTests(TestCase):
                 with_save=False,
             )
             mock_save.assert_not_called()
+
+
+class SaveNewsPostTests(TestCase):
+    def setUp(self):
+        self.mock_registry = MagicMock()
+        self.mock_manager = MagicMock()
+        self.mock_manager.get_model_name.return_value = 'FinBERT'
+        self.dm = DataManager(model_registry=self.mock_registry, default_model_id='FinBERT')
+
+    def _base_data(self, **overrides):
+        data = {
+            'ticker': 'AAPL',
+            'prediction': 2,
+            'predicted_probabilities': [0.1, 0.2, 0.7],
+            'text': 'Apple headline. Apple summary.',
+            'headline': 'Apple headline',
+            'summary': 'Apple summary',
+            'url': 'https://example.com/article',
+            'publisher': 'TheStreet',
+            'news_category': 'company news',
+            'external_id': '25341',
+            'published_at': datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        data.update(overrides)
+        return data
+
+    def test_saves_news_post(self):
+        self.dm.save_news_post(self._base_data(), model_manager=self.mock_manager)
+        news_post = NewsPost.objects.get(external_id='25341')
+        self.assertEqual(news_post.headline, 'Apple headline')
+        self.assertEqual(news_post.ticker.symbol, 'AAPL')
+        self.assertEqual(news_post.news_prediction.prediction, 2)
+        self.assertEqual(news_post.news_prediction.model_name, 'FinBERT')
+
+    def test_duplicate_external_id_does_not_raise(self):
+        self.dm.save_news_post(self._base_data(), model_manager=self.mock_manager)
+        self.dm.save_news_post(self._base_data(), model_manager=self.mock_manager)
+        self.assertEqual(NewsPost.objects.filter(external_id='25341').count(), 1)
+
+    def test_missing_optional_fields_still_saves(self):
+        data = self._base_data()
+        for key in ('summary', 'url', 'publisher', 'news_category'):
+            del data[key]
+        self.dm.save_news_post(data, model_manager=self.mock_manager)
+        news_post = NewsPost.objects.get(external_id='25341')
+        self.assertEqual(news_post.summary, '')
+        self.assertEqual(news_post.url, '')
+
+    @patch('scraper.managers.data_manager.data_manager.apps')
+    def test_database_error_is_swallowed(self, mock_apps):
+        from tickers.models import Ticker as RealTicker
+        from scraper.models import PostPrediction as RealPostPrediction
+
+        mock_news_post_model = MagicMock()
+        mock_news_post_model.objects.get_or_create.side_effect = DatabaseError('boom')
+
+        def get_model(app_label, model_name):
+            return {
+                'NewsPost': mock_news_post_model,
+                'Ticker': RealTicker,
+                'PostPrediction': RealPostPrediction,
+            }[model_name]
+
+        mock_apps.get_model.side_effect = get_model
+        self.dm.save_news_post(self._base_data(), model_manager=self.mock_manager)
+
+    @patch('scraper.managers.data_manager.data_manager.apps')
+    def test_unexpected_error_is_reraised(self, mock_apps):
+        mock_apps.get_model.side_effect = RuntimeError('boom')
+        with self.assertRaises(RuntimeError):
+            self.dm.save_news_post(self._base_data(), model_manager=self.mock_manager)

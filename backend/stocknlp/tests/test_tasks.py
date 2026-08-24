@@ -50,6 +50,60 @@ class EnqueueScraperDataTests(TestCase):
         self.assertEqual(kwargs['retry'].max, 3)
 
 
+class EnqueueFinnhubNewsTests(TestCase):
+    @patch('stocknlp.tasks.django_rq')
+    def test_enqueues_with_retry(self, mock_django_rq):
+        mock_queue = MagicMock()
+        mock_django_rq.get_queue.return_value = mock_queue
+
+        data = {'text': 'x', 'ticker': 'AAPL'}
+        result = tasks.enqueue_finnhub_news(data)
+
+        self.assertIsNone(result)
+        mock_django_rq.get_queue.assert_called_once_with('scraper_queue')
+        args, kwargs = mock_queue.enqueue.call_args
+        self.assertEqual(args[0], tasks.process_finnhub_news_job)
+        self.assertEqual(args[1], data)
+        self.assertEqual(kwargs['retry'].max, 3)
+
+
+class ProcessFinnhubNewsJobTests(TestCase):
+    def setUp(self):
+        self.data = {'text': 'headline. summary', 'ticker': 'AAPL', 'external_id': '1'}
+
+    @patch('stocknlp.tasks.apps')
+    def test_success_calls_eval_sentiment_with_finbert_and_saves(self, mock_apps):
+        mock_dm = MagicMock()
+        mock_dm.eval_sentiment.return_value = {'prediction': 2, 'predicted_probabilities': [0.1, 0.2, 0.7]}
+        mock_apps.get_app_config.return_value.DATA_MANAGER = mock_dm
+
+        tasks.process_finnhub_news_job(self.data)
+
+        mock_dm.eval_sentiment.assert_called_once_with(self.data, with_save=False, model_id='FinBERT')
+        mock_dm.save_news_post.assert_called_once()
+
+    @patch('stocknlp.tasks.apps')
+    def test_malformed_payload_dead_lettered_not_raised(self, mock_apps):
+        mock_dm = MagicMock()
+        mock_dm.eval_sentiment.side_effect = ValueError('bad payload')
+        mock_apps.get_app_config.return_value.DATA_MANAGER = mock_dm
+
+        with patch('stocknlp.tasks._dead_letter') as mock_dead_letter:
+            tasks.process_finnhub_news_job(self.data)
+
+        mock_dead_letter.assert_called_once_with('scraper_queue', self.data, 'bad payload')
+        mock_dm.save_news_post.assert_not_called()
+
+    @patch('stocknlp.tasks.apps')
+    def test_unexpected_error_propagates_for_rq_retry(self, mock_apps):
+        mock_dm = MagicMock()
+        mock_dm.eval_sentiment.side_effect = ModelPredictionError('model exploded')
+        mock_apps.get_app_config.return_value.DATA_MANAGER = mock_dm
+
+        with self.assertRaises(ModelPredictionError):
+            tasks.process_finnhub_news_job(self.data)
+
+
 class ProcessUserJobTests(TestCase):
     def setUp(self):
         self.data = {'text': 'bullish', 'ticker': '$AAPL', 'request_id': 'req-1'}

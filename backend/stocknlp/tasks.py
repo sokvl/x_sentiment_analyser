@@ -68,6 +68,13 @@ def enqueue_scraper_data(scraper_data: dict) -> None:
     )
 
 
+def enqueue_finnhub_news(news_data: dict) -> None:
+    """Push a Finnhub news article to the low-priority scraper queue for FinBERT scoring."""
+    django_rq.get_queue('scraper_queue').enqueue(
+        process_finnhub_news_job, news_data, retry=_retry_policy(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Jobs  (run by: python manage.py run_llm_worker)
 # ---------------------------------------------------------------------------
@@ -98,3 +105,16 @@ def process_scraper_job(data: dict) -> None:
     except ValueError as e:
         logger.warning('Malformed scraper job payload, sending to dead letter: %s', e)
         _dead_letter('scraper_queue', data, str(e))
+
+
+def process_finnhub_news_job(data: dict) -> None:
+    data_manager = apps.get_app_config('scraper').DATA_MANAGER
+
+    try:
+        result = data_manager.eval_sentiment(data, with_save=False, model_id='FinBERT')
+    except ValueError as e:
+        logger.warning('Malformed Finnhub news payload, sending to dead letter: %s', e)
+        _dead_letter('scraper_queue', data, str(e))
+        return
+
+    data_manager.save_news_post({**data, **result})

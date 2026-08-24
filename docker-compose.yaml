@@ -42,13 +42,30 @@ services:
       - db
       - redis
 
+  # --- FINNHUB NEWS INGESTOR
+  finnhub_ingestor:
+    build: ./backend
+    command: python manage.py run_finnhub_ingestion
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app:z
+    depends_on:
+      - db
+      - redis
+
   # --- SELENIUM
   selenium:
     image: selenium/standalone-chrome:latest
     shm_size: '2g'
+    env_file:
+      - ./backend/.env
+    environment:
+      SE_VNC_PASSWORD: ${VNC_PASSWORD}
+      SE_VNC_VIEW_ONLY: "true"
     ports:
-      - "4444:4444"
-      - "7900:7900"
+      - "127.0.0.1:4444:4444"
+      - "127.0.0.1:7900:7900"
 
   # --- FRONTEND
   frontend:
@@ -61,6 +78,8 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_NOVNC_URL=http://localhost:7900
+      - NEXT_PUBLIC_VNC_PASSWORD=${VNC_PASSWORD}
     depends_on:
       - api
 

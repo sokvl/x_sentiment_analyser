@@ -1,8 +1,10 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from .views import (
+    AvailableModelsView,
     ConfigViewSet,
     EvalView,
+    NewsPostListView,
     PostViewSet,
     PredictionsByDayView,
     SourceViewSet,
@@ -29,6 +31,8 @@ urlpatterns = [
     # NLP / prediction endpoints
     path("eval/", EvalView.as_view(), name="eval"),
     path("predictions-by-day/", PredictionsByDayView.as_view(), name="predictions-by-day"),
+    path("models/", AvailableModelsView.as_view(), name="available-models"),
+    path("news/finnhub/", NewsPostListView.as_view(), name="finnhub-news-list"),
 
     # ViewSets
     path("", include(router.urls)),

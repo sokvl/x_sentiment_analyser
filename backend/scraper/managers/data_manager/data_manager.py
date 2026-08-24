@@ -132,3 +132,47 @@ class DataManager:
         except Exception:
             logger.exception('Unexpected error while saving data')
             raise
+
+    def save_news_post(self, data: dict, model_manager=None):
+        NewsPost = apps.get_model('scraper', 'NewsPost')
+        Ticker = apps.get_model('tickers', 'Ticker')
+        PostPrediction = apps.get_model('scraper', 'PostPrediction')
+
+        if model_manager is None:
+            model_manager, _, _ = self.registry.get('FinBERT')
+
+        try:
+            with transaction.atomic():
+                symbol = data['ticker']
+                ticker, _ = Ticker.objects.get_or_create(
+                    symbol=symbol,
+                    defaults={'full_name': symbol, 'type': 'stock'},
+                )
+                prediction, _ = PostPrediction.objects.get_or_create(
+                    prediction=data['prediction'],
+                    probabilities=data['predicted_probabilities'],
+                    model_name=model_manager.get_model_name(),
+                )
+                news_post, created = NewsPost.objects.get_or_create(
+                    external_id=data.get('external_id'),
+                    defaults={
+                        'ticker': ticker,
+                        'headline': data.get('headline', ''),
+                        'summary': data.get('summary', ''),
+                        'text': data['text'],
+                        'url': data.get('url', ''),
+                        'publisher': data.get('publisher', ''),
+                        'category': data.get('news_category', ''),
+                        'published_at': data['published_at'],
+                        'news_prediction': prediction,
+                    },
+                )
+            if created:
+                logger.info('New news post saved: %s', news_post)
+            else:
+                logger.debug('News post already exists: %s', news_post)
+        except DatabaseError:
+            logger.exception('Database error occurred while saving news post')
+        except Exception:
+            logger.exception('Unexpected error while saving news post')
+            raise

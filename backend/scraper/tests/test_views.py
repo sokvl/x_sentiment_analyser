@@ -1,11 +1,12 @@
 from unittest.mock import patch, MagicMock
 
-from django.test import TestCase
+from django.contrib.auth.models import User
+from django.test import TestCase, override_settings
 from django.utils import timezone
-from rest_framework.test import APIRequestFactory, APIClient
+from rest_framework.test import APIRequestFactory, APIClient, force_authenticate
 
 from scraper.models import (
-    Config, Source, Content, PostMeta, PostPrediction, Post,
+    Config, Source, Content, PostMeta, PostPrediction, Post, NewsPost,
 )
 from scraper.views.control import ScraperControlView, ScraperLogsView, ScraperConfigView
 from tickers.models import Ticker
@@ -67,12 +68,12 @@ class ScraperLogsViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     @patch('scraper.views.control.ScraperService')
-    def test_scraper_not_running_returns_200_with_defaults(self, mock_svc_cls):
+    def test_scraper_not_found_returns_200_with_idle_state(self, mock_svc_cls):
         mock_svc_cls.return_value.logs.side_effect = ValueError("No data")
         request = self.factory.get('/api/scraper/logs/', {'source': 'unknown'})
         response = self.view(request)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['state'], 'unknown')
+        self.assertEqual(response.data['state'], 'IDLE')
 
 
 class ConfigViewSetTests(TestCase):
@@ -222,6 +223,105 @@ class PostViewSetTests(TestCase):
     def test_delete_not_allowed(self):
         response = self.client.delete(f'/api/posts/{self.post.post_id}/')
         self.assertEqual(response.status_code, 405)
+
+
+class AvailableModelsViewTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        from scraper.views.models import AvailableModelsView
+        self.view = AvailableModelsView.as_view()
+
+    @patch('scraper.views.models.apps')
+    def test_returns_available_and_unavailable_models(self, mock_apps):
+        mock_registry = MagicMock()
+        mock_registry.available_models = ['FinBERT', 'TweetBERT']
+        mock_registry.unavailable_models = ['LSTMCNNv1']
+        mock_apps.get_app_config.return_value.MODEL_REGISTRY = mock_registry
+
+        request = self.factory.get('/api/models/')
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['available'], ['FinBERT', 'TweetBERT'])
+        self.assertEqual(response.data['unavailable'], ['LSTMCNNv1'])
+
+    def test_accessible_without_authentication(self):
+        request = self.factory.get('/api/models/')
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+
+
+class NewsPostListViewTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        from scraper.views.news_post import NewsPostListView
+        self.view = NewsPostListView.as_view()
+
+    def _make_news_post(self, symbol='AAPL', headline='Apple news'):
+        ticker = Ticker.objects.create(symbol=symbol, type='stock', full_name=symbol)
+        prediction = PostPrediction.objects.create(
+            prediction=2, probabilities=[0.1, 0.2, 0.7], model_name='FinBERT',
+        )
+        return NewsPost.objects.create(
+            external_id=str(hash((symbol, headline))),
+            ticker=ticker,
+            headline=headline,
+            summary='summary',
+            text=f'{headline}. summary',
+            url='https://example.com',
+            publisher='TheStreet',
+            category='company news',
+            published_at=timezone.now(),
+            news_prediction=prediction,
+        )
+
+    def test_empty_db_returns_empty_list(self):
+        request = self.factory.get('/api/news/finnhub/')
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    def test_returns_saved_news_posts(self):
+        self._make_news_post()
+        request = self.factory.get('/api/news/finnhub/')
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['ticker'], 'AAPL')
+        self.assertEqual(response.data[0]['prediction'], 2)
+
+    def test_filters_by_tickers_param(self):
+        self._make_news_post(symbol='AAPL', headline='Apple news')
+        self._make_news_post(symbol='TSLA', headline='Tesla news')
+        request = self.factory.get('/api/news/finnhub/', {'tickers': 'AAPL'})
+        response = self.view(request)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['ticker'], 'AAPL')
+
+
+@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+class NewsPostListViewPermissionTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        from scraper.views.news_post import NewsPostListView
+        self.view = NewsPostListView.as_view()
+        self.owner = User.objects.create_user(username='owner', password='pw123456')
+
+    def test_anonymous_no_key_denied(self):
+        request = self.factory.get('/api/news/finnhub/')
+        response = self.view(request)
+        self.assertEqual(response.status_code, 403)
+
+    def test_interviewer_key_allowed(self):
+        request = self.factory.get('/api/news/finnhub/', HTTP_X_ACCESS_KEY='test-key')
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+
+    def test_owner_allowed(self):
+        request = self.factory.get('/api/news/finnhub/')
+        force_authenticate(request, user=self.owner)
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
 
 
 class EvalViewTests(TestCase):
