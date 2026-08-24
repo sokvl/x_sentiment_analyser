@@ -58,20 +58,20 @@ class ExtractTweetMetadataTests(SimpleTestCase):
         self.assertEqual(result['retweets'], 7)
         self.assertEqual(result['replies'], 3)
 
-    def test_whole_number_k_abbreviation_parses_by_coincidence(self):
+    def test_whole_number_k_abbreviation_is_parsed(self):
         html = tweet_html(like='12K')
         result = self.scraper._extract_tweet_metadata(html)
         self.assertEqual(result['likes'], 12000)
 
-    def test_decimal_k_abbreviation_silently_returns_none(self):
+    def test_decimal_k_abbreviation_is_parsed(self):
         html = tweet_html(like='1.2K')
         result = self.scraper._extract_tweet_metadata(html)
-        self.assertIsNone(result['likes'])
+        self.assertEqual(result['likes'], 1200)
 
-    def test_decimal_m_abbreviation_silently_returns_none(self):
+    def test_decimal_m_abbreviation_is_parsed(self):
         html = tweet_html(retweet='3.4M')
         result = self.scraper._extract_tweet_metadata(html)
-        self.assertIsNone(result['retweets'])
+        self.assertEqual(result['retweets'], 3400000)
 
     def test_malformed_count_returns_none(self):
         html = tweet_html(reply='not-a-number')
@@ -260,10 +260,16 @@ class ScrollAndCollectLatestTests(SimpleTestCase):
         self.sleep_patcher.start()
         self.addCleanup(self.sleep_patcher.stop)
 
-        self.scraper = make_scraper({'max_time_running': None})
+        self.scraper = make_scraper({
+            'max_time_running': None,
+            'source': [{'name': 'twitter', 'base_url': 'https://x.com/search?q='}],
+        })
         self.scraper._run_started_at = time.time()
         self.scraper.instance = MagicMock()
         self.scraper.instance.execute_script.side_effect = growing_scroll_height
+        self.enqueue_patcher = patch('scraper.scrapers.twitter_scraper.enqueue_scraper_data')
+        self.mock_enqueue = self.enqueue_patcher.start()
+        self.addCleanup(self.enqueue_patcher.stop)
 
     def test_stops_at_date_boundary(self):
         target_date = date(2026, 8, 20)
@@ -278,6 +284,7 @@ class ScrollAndCollectLatestTests(SimpleTestCase):
             count = self.scraper._scroll_and_collect_latest('$AAPL', target_date)
 
         self.assertEqual(count, 2)
+        self.assertEqual(self.mock_enqueue.call_count, 2)
 
     def test_stops_when_tweet_already_known(self):
         target_date = date(2026, 8, 20)
@@ -298,6 +305,7 @@ class ScrollAndCollectLatestTests(SimpleTestCase):
             count = self.scraper._scroll_and_collect_latest('$AAPL', target_date)
 
         self.assertEqual(count, 1)
+        self.assertEqual(self.mock_enqueue.call_count, 1)
 
 
 class RunProcedureModeDispatchTests(SimpleTestCase):

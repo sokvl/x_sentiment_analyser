@@ -280,13 +280,16 @@ class TwitterScraper(Scraper):
         password_input.send_keys(creds['password'])
         password_input.send_keys(Keys.RETURN)
 
-    def _generate_twitter_query(self, ticker: str, since_date: str, until_date: str) -> list[str]:
+    def _generate_twitter_query(
+        self, ticker: str, since_date: str | None = None, until_date: str | None = None,
+    ) -> list[str]:
         try:
             qp = self.config['twitter_query']['params']
             filters = ' '.join(
                 [f"-filter:{f}" for f in qp['filter']],
             )
-            query = f"{ticker} lang:{qp['lang']} since:{since_date} until:{until_date} {filters}"
+            date_clause = f'since:{since_date} until:{until_date} ' if since_date and until_date else ''
+            query = f"{ticker} lang:{qp['lang']} {date_clause}{filters}"
             return [query]
         except Exception as e:
             self._log(LogTypes.ERROR, f'Failed to generate query for {ticker}: {e}')
@@ -409,12 +412,22 @@ class TwitterScraper(Scraper):
 
         def extract_number_from_button(data_testid):
             button = soup.find('button', {'data-testid': data_testid})
-            if button:
-                try:
-                    return int(button.get_text(strip=True).replace('K', '000').replace('M', '000000'))
-                except ValueError:
-                    pass
-            return None
+            if not button:
+                return None
+
+            text = button.get_text(strip=True)
+            multiplier = 1
+            if text.endswith('K'):
+                multiplier = 1_000
+                text = text[:-1]
+            elif text.endswith('M'):
+                multiplier = 1_000_000
+                text = text[:-1]
+
+            try:
+                return int(float(text) * multiplier)
+            except ValueError:
+                return None
 
         likes = extract_number_from_button('like')
         retweets = extract_number_from_button('retweet')
@@ -516,7 +529,7 @@ class TwitterScraper(Scraper):
         return count
 
     def _scrape_ticker(
-        self, ticker: str, since_date: str, until_date: str,
+        self, ticker: str, since_date: str | None = None, until_date: str | None = None,
         collector=None, force_latest: bool = False,
     ) -> int:
         queries = self._generate_twitter_query(
@@ -613,11 +626,9 @@ class TwitterScraper(Scraper):
 
     def _crawl_ticker(self, ticker: str) -> int:
         today = datetime.now().date()
-        since_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
-        until_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
 
         return self._scrape_ticker(
-            ticker, since_date, until_date,
+            ticker,
             collector=lambda t: self._scroll_and_collect_latest(t, today),
             force_latest=True,
         )

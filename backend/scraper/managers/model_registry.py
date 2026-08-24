@@ -24,7 +24,6 @@ MODEL_ID_TO_CONFIG_KEY = {
 # HuggingFace model IDs that use BertTokenizer instead of AutoTokenizer.
 _BERT_TOKENIZER_HF_IDS = {
     'yiyanghkust/finbert-tone',
-    'nickmuchi/finbert-tone-finetuned-fintwitter-classification',
 }
 
 

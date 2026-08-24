@@ -15,7 +15,6 @@ from .base_loader import BaseModelLoader
 # HuggingFace model IDs that require the explicit Bert* classes.
 _BERT_MODEL_HF_IDS = {
     'yiyanghkust/finbert-tone',
-    'nickmuchi/finbert-tone-finetuned-fintwitter-classification',
 }
 
 

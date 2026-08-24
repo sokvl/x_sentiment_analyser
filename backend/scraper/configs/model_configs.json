@@ -28,7 +28,7 @@
       "model_lib": "transformers",
       "params": {
         "weights_path": null,
-        "hf_fallback": "nickmuchi/finbert-tone-finetuned-fintwitter-classification",
+        "hf_fallback": "StephanAkkerman/FinTwitBERT-sentiment",
         "num_labels": 3,
         "label_map": [1, 2, 0]
       }
