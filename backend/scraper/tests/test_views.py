@@ -1,3 +1,4 @@
+from datetime import timedelta
 from unittest.mock import patch, MagicMock
 
 from django.contrib.auth.models import User
@@ -324,6 +325,120 @@ class NewsPostListViewPermissionTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
 
+class NewsOptimismIndexViewTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        from scraper.views.news_index import NewsOptimismIndexView
+        self.view = NewsOptimismIndexView.as_view()
+        self.today = timezone.now().date()
+
+    def _make_news_post(self, symbol, when, probabilities):
+        ticker = Ticker.objects.create(symbol=symbol, type='stock', full_name=symbol)
+        prediction = PostPrediction.objects.create(
+            prediction=2, probabilities=probabilities, model_name='FinBERT',
+        )
+        return NewsPost.objects.create(
+            external_id=str(hash((symbol, when))),
+            ticker=ticker,
+            headline=f'{symbol} headline',
+            summary='summary',
+            text=f'{symbol} headline. summary',
+            url='https://example.com',
+            publisher='TheStreet',
+            category='company news',
+            published_at=when,
+            news_prediction=prediction,
+        )
+
+    def test_invalid_start_date_returns_400(self):
+        request = self.factory.get('/api/news/finnhub/index/', {'start_date': 'bad'})
+        response = self.view(request)
+        self.assertEqual(response.status_code, 400)
+
+    def test_invalid_end_date_returns_400(self):
+        request = self.factory.get('/api/news/finnhub/index/', {'end_date': 'bad'})
+        response = self.view(request)
+        self.assertEqual(response.status_code, 400)
+
+    def test_start_after_end_returns_400(self):
+        request = self.factory.get('/api/news/finnhub/index/', {
+            'start_date': '2024-02-01',
+            'end_date': '2024-01-01',
+        })
+        response = self.view(request)
+        self.assertEqual(response.status_code, 400)
+
+    def test_days_with_no_articles_are_omitted(self):
+        request = self.factory.get('/api/news/finnhub/index/', {
+            'start_date': (self.today - timedelta(days=3)).isoformat(),
+            'end_date': self.today.isoformat(),
+        })
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['series'], [])
+
+    def test_pools_articles_across_tickers_into_one_daily_score(self):
+        self._make_news_post('AAA', timezone.now(), [0.1, 0.2, 0.7])
+        self._make_news_post('BBB', timezone.now(), [0.1, 0.2, 0.7])
+
+        request = self.factory.get('/api/news/finnhub/index/', {
+            'start_date': self.today.isoformat(),
+            'end_date': self.today.isoformat(),
+        })
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['series']), 1)
+        self.assertEqual(response.data['series'][0]['article_count'], 2)
+
+    def test_defaults_to_full_history_when_no_dates_given(self):
+        self._make_news_post('AAA', timezone.now(), [0.1, 0.2, 0.7])
+
+        request = self.factory.get('/api/news/finnhub/index/')
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['series']), 1)
+
+    @patch('scraper.views.news_index.NewsOptimismIndexView._build_series')
+    def test_internal_error_does_not_leak_exception_text(self, mock_build_series):
+        mock_build_series.side_effect = RuntimeError("/etc/secret/db.conf leaked")
+
+        request = self.factory.get('/api/news/finnhub/index/', {
+            'start_date': '2024-01-01',
+            'end_date': '2024-01-31',
+        })
+        response = self.view(request)
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn('secret', response.data['error'])
+        self.assertEqual(response.data['error'], 'News index generation failed')
+
+
+@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+class NewsOptimismIndexViewPermissionTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        from scraper.views.news_index import NewsOptimismIndexView
+        self.view = NewsOptimismIndexView.as_view()
+        self.owner = User.objects.create_user(username='owner', password='pw123456')
+
+    def test_anonymous_no_key_denied(self):
+        request = self.factory.get('/api/news/finnhub/index/')
+        response = self.view(request)
+        self.assertEqual(response.status_code, 403)
+
+    def test_interviewer_key_allowed(self):
+        request = self.factory.get('/api/news/finnhub/index/', HTTP_X_ACCESS_KEY='test-key')
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+
+    def test_owner_allowed(self):
+        request = self.factory.get('/api/news/finnhub/index/')
+        force_authenticate(request, user=self.owner)
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+
+
 class EvalViewTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
@@ -333,7 +448,7 @@ class EvalViewTests(TestCase):
         mock_ds_cls.return_value.evaluate_sentiment.return_value = {
             'text': 'test tweet',
             'ticker': '$AAPL',
-            'processed_text': [1, 2, 3, 0, 0],
+            'cleaned_text': 'test tweet',
             'prediction': 2,
             'predicted_probabilities': [0.1, 0.2, 0.7],
         }

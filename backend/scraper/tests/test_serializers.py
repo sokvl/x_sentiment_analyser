@@ -104,7 +104,7 @@ class EvalResponseSerializerTests(TestCase):
         data = {
             'text': 'test tweet',
             'ticker': '$AAPL',
-            'processed_text': [1, 2, 3, 0, 0],
+            'cleaned_text': 'test tweet',
             'prediction': 2,
             'predicted_probabilities': [0.1, 0.2, 0.7],
         }
