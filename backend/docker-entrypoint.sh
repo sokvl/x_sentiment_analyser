@@ -3,12 +3,13 @@
 
 set -e
 
-# Start debugpy listener in the background
-python -c "
+if [ "${ENABLE_DEBUGPY:-false}" = "true" ]; then
+    python -c "
 import debugpy
 debugpy.listen(('0.0.0.0', 5678))
 print('🐛 debugpy listening on 0.0.0.0:5678')
 " &
+fi
 
 # Start Django development server
 exec python manage.py runserver 0.0.0.0:8000
