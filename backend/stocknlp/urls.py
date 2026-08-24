@@ -20,9 +20,12 @@ from django.contrib import admin
 from django.urls import include
 from django.urls import path
 
+from stocknlp.auth_views import VerifyKeyView
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('django-rq/', include('django_rq.urls')),
+    path('api/auth/verify-key/', VerifyKeyView.as_view(), name='verify-key'),
     path('api/', include('scraper.urls')),
     path('api/tickers/', include('tickers.urls')),
     path('api/signals/', include('signals.urls')),
