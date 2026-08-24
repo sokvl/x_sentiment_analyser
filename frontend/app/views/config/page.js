@@ -14,6 +14,7 @@ export default function ConfigPage() {
     const [saving, setSaving] = useState(false);
     const [alert, setAlert] = useState(null);
     const [showJsonEditor, setShowJsonEditor] = useState(false);
+    const [availableModels, setAvailableModels] = useState(AVAILABLE_MODELS);
 
     const fetchConfig = async () => {
         setLoading(true);
@@ -34,8 +35,21 @@ export default function ConfigPage() {
         }
     };
 
+    const fetchAvailableModels = async () => {
+        try {
+            const response = await apiFetch('/api/models/');
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            const data = await response.json();
+            const models = AVAILABLE_MODELS.filter((m) => data.available.includes(m.id));
+            setAvailableModels(models.length > 0 ? models : AVAILABLE_MODELS);
+        } catch (err) {
+            setAvailableModels(AVAILABLE_MODELS);
+        }
+    };
+
     useEffect(() => {
         fetchConfig();
+        fetchAvailableModels();
     }, []);
 
     const handleScraperConfigChange = (updatedScraper) => {
@@ -142,7 +156,7 @@ export default function ConfigPage() {
                                     onChange={(e) => handleUserConfigChange('model', e.target.value)}
                                     className="w-full mt-1 p-2 rounded-md bg-gray-900 border border-gray-700 text-gray-200"
                                 >
-                                    {AVAILABLE_MODELS.map((m) => (
+                                    {availableModels.map((m) => (
                                         <option key={m.id} value={m.id}>{m.label}</option>
                                     ))}
                                 </select>
