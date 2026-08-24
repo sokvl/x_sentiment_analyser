@@ -84,7 +84,7 @@ export default function PredictionReportTile() {
             const data = await response.json();
             setReportData(data);
             // As long as there's at least one valid ticker, set it as active
-            const firstTicker = Object.keys(data).find((key) => key !== 'total_correct');
+            const firstTicker = Object.keys(data).find((key) => key !== 'overall_accuracy');
             setActiveTicker(firstTicker);
         } catch (err) {
             setError(`Error fetching report: ${err.message}`);
@@ -194,7 +194,7 @@ export default function PredictionReportTile() {
             {reportData && (
                 <div className="mb-4 flex gap-4 border-b border-gray-700">
                     {Object.keys(reportData)
-                        .filter((ticker) => ticker !== 'total_correct')
+                        .filter((ticker) => ticker !== 'overall_accuracy')
                         .map((ticker) => (
                             <button
                                 key={ticker}
@@ -212,7 +212,9 @@ export default function PredictionReportTile() {
             )}
 
             {/* Table for the active ticker */}
-            {activeTicker && reportData[activeTicker] && (
+            {activeTicker && reportData[activeTicker] && reportData[activeTicker].error ? (
+                <p className="text-red-400 mt-4">{reportData[activeTicker].error}</p>
+            ) : activeTicker && reportData[activeTicker] && (
                 <div className="overflow-x-auto">
                     <h3 className="text-lg font-semibold text-gray-300 mt-4">
                         {activeTicker} Report
@@ -230,7 +232,7 @@ export default function PredictionReportTile() {
                         </thead>
                         <tbody>
                             {Object.entries(reportData[activeTicker])
-                                .filter(([date, data]) => !data.error && date !== 'ticker_total_correctness')
+                                .filter(([date, data]) => date !== 'ticker_accuracy' && !data.error)
                                 .map(([date, data], index) => (
                                     <tr
                                         key={`${activeTicker}-${date}-${index}`}
@@ -254,18 +256,18 @@ export default function PredictionReportTile() {
                         </tbody>
                     </table>
 
-                    {/* Show the ticker-level correctness (if present) */}
+                    {/* Show the ticker-level accuracy (if present) */}
                     <h4 className="mt-4 text-gray-200">
-                        <strong>Total Correctness:</strong>{' '}
-                        {reportData[activeTicker].ticker_total_correctness || 'N/A'}
+                        <strong>Ticker Accuracy:</strong>{' '}
+                        {reportData[activeTicker].ticker_accuracy || 'N/A'}
                     </h4>
                 </div>
             )}
 
-            {/* Optionally show the overall correctness across ALL requested tickers, if desired */}
-            {reportData?.total_correct && (
+            {/* Overall accuracy across all requested tickers */}
+            {reportData?.overall_accuracy && (
                 <div className="mt-4 text-gray-200">
-                    <strong>Overall correctness (all tickers):</strong> {reportData.total_correct}
+                    <strong>Overall accuracy (all tickers):</strong> {reportData.overall_accuracy}
                 </div>
             )}
         </Tile>
