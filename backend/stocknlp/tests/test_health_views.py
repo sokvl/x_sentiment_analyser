@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
 from stocknlp.health_views import HealthCheckView
@@ -8,7 +8,7 @@ from stocknlp.health_views import HealthCheckView
 factory = APIRequestFactory()
 
 
-class HealthCheckViewTests(SimpleTestCase):
+class HealthCheckViewTests(TestCase):
     def setUp(self):
         self.view = HealthCheckView.as_view()
 
