@@ -1,9 +1,44 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Tile from '../common/Tile';
 import apiFetch from '../../utils/apiFetch';
+import { useUserConfig } from '../../utils/UserConfigContext';
+
+function toDateString(date) {
+    return date.toISOString().split('T')[0];
+}
+
+function addDays(dateString, days) {
+    const date = new Date(dateString);
+    date.setDate(date.getDate() + days);
+    return date;
+}
+
+function buildPresetsFromBounds(startDate, endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    const recentWeekStart = addDays(endDate, -7) < start ? start : addDays(endDate, -7);
+    const recentMonthStart = addDays(endDate, -30) < start ? start : addDays(endDate, -30);
+
+    const presets = [
+        { label: 'Most Recent Week', start: toDateString(recentWeekStart), end: toDateString(end) },
+        { label: 'Most Recent Month', start: toDateString(recentMonthStart), end: toDateString(end) },
+        { label: 'Full Available Range', start: toDateString(start), end: toDateString(end) },
+    ];
+
+    // De-duplicate presets that collapse to the same range when data is sparse.
+    const seen = new Set();
+    return presets.filter((preset) => {
+        const key = `${preset.start}_${preset.end}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
 
 export default function PredictionReportTile() {
+    const { state: userConfig } = useUserConfig();
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [tickers, setTickers] = useState('');
@@ -12,19 +47,41 @@ export default function PredictionReportTile() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    const fetchPredictionReport = async (e) => {
-        e.preventDefault();
+    const [presets, setPresets] = useState([]);
+    const [presetsError, setPresetsError] = useState(null);
+
+    const watchlistTickers = (userConfig.tickers || []).join(',');
+
+    useEffect(() => {
+        const fetchDataBounds = async () => {
+            try {
+                const response = await apiFetch('/api/signals/market-index/');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                const data = await response.json();
+                if (data.start_date && data.end_date) {
+                    setPresets(buildPresetsFromBounds(data.start_date, data.end_date));
+                }
+            } catch (err) {
+                setPresetsError(`Error loading available data range: ${err.message}`);
+            }
+        };
+
+        fetchDataBounds();
+    }, []);
+
+    const runReport = async (queryTickers, queryStartDate, queryEndDate) => {
         setLoading(true);
         setError(null);
         try {
             const response = await apiFetch(
-                `/api/signals/prediction-report/?start_date=${startDate}&end_date=${endDate}&tickers=${tickers}`
+                `/api/signals/prediction-report/?start_date=${queryStartDate}&end_date=${queryEndDate}&tickers=${queryTickers}`
             );
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
             const data = await response.json();
-            console.log(data);
             setReportData(data);
             // As long as there's at least one valid ticker, set it as active
             const firstTicker = Object.keys(data).find((key) => key !== 'total_correct');
@@ -36,9 +93,44 @@ export default function PredictionReportTile() {
         }
     };
 
+    const fetchPredictionReport = (e) => {
+        e.preventDefault();
+        runReport(tickers, startDate, endDate);
+    };
+
+    const fetchPresetReport = (preset) => {
+        runReport(watchlistTickers, preset.start, preset.end);
+    };
+
     return (
         <Tile>
             <h2 className="text-lg font-semibold mb-4 text-gray-200">Prediction Report</h2>
+
+            {/* Example presets — real watchlist tickers, date ranges backed by actual data */}
+            {presetsError ? (
+                <p className="text-yellow-500 text-sm mb-4">{presetsError}</p>
+            ) : watchlistTickers && presets.length > 0 ? (
+                <div className="mb-4">
+                    <p className="text-sm text-gray-400 mb-2">
+                        Quick presets — using your watchlist: {watchlistTickers}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                        {presets.map((preset) => (
+                            <button
+                                key={preset.label}
+                                onClick={() => fetchPresetReport(preset)}
+                                disabled={loading}
+                                title={`${preset.start} to ${preset.end}`}
+                                className={`px-3 py-1.5 rounded-md bg-gray-700 text-gray-200 text-sm ${
+                                    loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-600'
+                                }`}
+                            >
+                                {preset.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
 
             {/* Form */}
             <form onSubmit={fetchPredictionReport} className="mb-4 space-y-4">
