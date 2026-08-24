@@ -111,3 +111,61 @@ class TickerService:
         cache.set(cache_key, result, timeout=settings.CACHE_TTL_STOCK_DATA)
         logger.debug("Cache SET: %s (%ss TTL)", cache_key, settings.CACHE_TTL_STOCK_DATA)
         return result
+
+    def parse_news_count(self, count_param: str | None) -> int:
+        """
+        Parses and validates the 'count' query param (default 5, 1-50).
+        Raises: ValidationError on bad value.
+        """
+        if count_param is None:
+            return 5
+
+        try:
+            count = int(count_param)
+        except ValueError:
+            raise ValidationError("Invalid count. Must be an integer.")
+
+        if count < 1 or count > 50:
+            raise ValidationError("Invalid count. Must be between 1 and 50.")
+
+        return count
+
+    def _normalize_news_item(self, item: dict, symbol: str) -> dict:
+        content = item.get('content', {})
+        return {
+            'ticker': symbol,
+            'title': content.get('title'),
+            'publisher': (content.get('provider') or {}).get('displayName'),
+            'link': (content.get('canonicalUrl') or {}).get('url'),
+            'published_at': content.get('pubDate'),
+        }
+
+    def fetch_news(self, symbols: list[str], count: int) -> dict:
+        """
+        Fetches recent news headlines per symbol from yfinance.
+        Results are cached per (symbol_set, count) for CACHE_TTL_NEWS seconds.
+        Returns a dict keyed by symbol.
+        """
+        from django.core.cache import cache
+
+        if not symbols:
+            return {}
+
+        cache_key = f"news:{'_'.join(sorted(symbols))}:{count}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            logger.debug("Cache HIT: %s", cache_key)
+            return cached
+
+        result = {}
+        for symbol in symbols:
+            try:
+                raw_items = yf.Ticker(symbol).news[:count]
+                result[symbol] = [self._normalize_news_item(item, symbol) for item in raw_items]
+            except Exception as e:
+                logger.exception("yfinance news fetch failed for %s: %s", symbol, e)
+                result[symbol] = {'error': f"Failed to fetch news: {e}"}
+
+        cache.set(cache_key, result, timeout=settings.CACHE_TTL_NEWS)
+        logger.debug("Cache SET: %s (%ss TTL)", cache_key, settings.CACHE_TTL_NEWS)
+        return result

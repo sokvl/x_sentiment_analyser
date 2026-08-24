@@ -153,3 +153,118 @@ class FetchStockDataTests(TestCase):
         result = self.service.fetch_stock_data(['AAPL'], date(2024, 1, 1), date(2024, 1, 31))
         self.assertIn('AAPL', result)
         self.assertIn('error', result['AAPL'])
+
+
+class ParseNewsCountTests(TestCase):
+    def setUp(self):
+        self.service = TickerService()
+
+    def test_defaults_to_five(self):
+        self.assertEqual(self.service.parse_news_count(None), 5)
+
+    def test_parses_valid_count(self):
+        self.assertEqual(self.service.parse_news_count('10'), 10)
+
+    def test_non_integer_raises(self):
+        with self.assertRaises(ValidationError):
+            self.service.parse_news_count('bad')
+
+    def test_below_min_raises(self):
+        with self.assertRaises(ValidationError):
+            self.service.parse_news_count('0')
+
+    def test_above_max_raises(self):
+        with self.assertRaises(ValidationError):
+            self.service.parse_news_count('51')
+
+    def test_boundary_values_pass(self):
+        self.assertEqual(self.service.parse_news_count('1'), 1)
+        self.assertEqual(self.service.parse_news_count('50'), 50)
+
+
+class FetchNewsTests(TestCase):
+    def setUp(self):
+        self.service = TickerService()
+        self.raw_item = {
+            'content': {
+                'title': 'Apple hits new high',
+                'pubDate': '2026-08-21T19:51:10Z',
+                'provider': {'displayName': 'Reuters'},
+                'canonicalUrl': {'url': 'https://example.com/article'},
+            },
+        }
+
+    def test_returns_empty_dict_for_no_symbols(self):
+        self.assertEqual(self.service.fetch_news([], 5), {})
+
+    @patch('django.core.cache.cache')
+    @patch('tickers.services.ticker_service.yf')
+    def test_returns_cached_data(self, mock_yf, mock_cache):
+        mock_cache.get.return_value = {'AAPL': [{'title': 'cached'}]}
+        result = self.service.fetch_news(['AAPL'], 5)
+        self.assertEqual(result, {'AAPL': [{'title': 'cached'}]})
+        mock_yf.Ticker.assert_not_called()
+
+    @patch('django.core.cache.cache')
+    @patch('tickers.services.ticker_service.yf')
+    def test_fetches_and_normalizes_on_cache_miss(self, mock_yf, mock_cache):
+        mock_cache.get.return_value = None
+        mock_yf.Ticker.return_value.news = [self.raw_item]
+
+        result = self.service.fetch_news(['AAPL'], 5)
+
+        self.assertEqual(len(result['AAPL']), 1)
+        article = result['AAPL'][0]
+        self.assertEqual(article['ticker'], 'AAPL')
+        self.assertEqual(article['title'], 'Apple hits new high')
+        self.assertEqual(article['publisher'], 'Reuters')
+        self.assertEqual(article['link'], 'https://example.com/article')
+        self.assertEqual(article['published_at'], '2026-08-21T19:51:10Z')
+
+    @patch('django.core.cache.cache')
+    @patch('tickers.services.ticker_service.yf')
+    def test_respects_count_limit(self, mock_yf, mock_cache):
+        mock_cache.get.return_value = None
+        mock_yf.Ticker.return_value.news = [self.raw_item] * 10
+
+        result = self.service.fetch_news(['AAPL'], 3)
+        self.assertEqual(len(result['AAPL']), 3)
+
+    @patch('django.core.cache.cache')
+    @patch('tickers.services.ticker_service.yf')
+    def test_handles_empty_news_list(self, mock_yf, mock_cache):
+        mock_cache.get.return_value = None
+        mock_yf.Ticker.return_value.news = []
+
+        result = self.service.fetch_news(['AAPL'], 5)
+        self.assertEqual(result['AAPL'], [])
+
+    @patch('django.core.cache.cache')
+    @patch('tickers.services.ticker_service.yf')
+    def test_handles_yfinance_exception_per_symbol(self, mock_yf, mock_cache):
+        mock_cache.get.return_value = None
+
+        def ticker_side_effect(symbol):
+            mock_ticker = MagicMock()
+            if symbol == 'AAPL':
+                type(mock_ticker).news = property(lambda self: (_ for _ in ()).throw(Exception('API error')))
+            else:
+                mock_ticker.news = [self.raw_item]
+            return mock_ticker
+
+        mock_yf.Ticker.side_effect = ticker_side_effect
+
+        result = self.service.fetch_news(['AAPL', 'TSLA'], 5)
+        self.assertIn('error', result['AAPL'])
+        self.assertEqual(len(result['TSLA']), 1)
+
+    @patch('django.core.cache.cache')
+    @patch('tickers.services.ticker_service.yf')
+    def test_cache_set_called_with_news_ttl(self, mock_yf, mock_cache):
+        mock_cache.get.return_value = None
+        mock_yf.Ticker.return_value.news = [self.raw_item]
+
+        self.service.fetch_news(['AAPL'], 5)
+
+        _, kwargs = mock_cache.set.call_args
+        self.assertEqual(kwargs['timeout'], settings.CACHE_TTL_NEWS)
