@@ -313,6 +313,8 @@ REST_FRAMEWORK = {
 # Logging
 # ---------------------------------------------------------------------------
 
+LOG_JSON = _env_bool('DJANGO_LOG_JSON', not DEBUG)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -321,11 +323,20 @@ LOGGING = {
             'format': '[{asctime}] {levelname} {name}: {message}',
             'style': '{',
         },
+        'json': {
+            '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+            'rename_fields': {
+                'asctime': 'timestamp',
+                'levelname': 'level',
+                'name': 'logger',
+            },
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'formatter': 'json' if LOG_JSON else 'verbose',
         },
     },
     'loggers': {
@@ -354,6 +365,10 @@ LOGGING = {
 # ---------------------------------------------------------------------------
 # Security hardening (production only)
 # ---------------------------------------------------------------------------
+
+if _env_bool('DJANGO_TRUST_PROXY_HEADERS', False):
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 SECURE_SSL_REDIRECT = os.getenv('DJANGO_SSL_REDIRECT', 'False').lower() in ('1', 'true', 'yes')
 if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000

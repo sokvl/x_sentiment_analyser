@@ -1,0 +1,173 @@
+services:
+  # --- DATABASE
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+
+  # --- SCHEDULED DATABASE BACKUPS
+  db_backup:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/pg_backup.sh"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_HOST: db
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ./scripts/pg_backup.sh:/scripts/pg_backup.sh:ro
+      - pg_backups:/backups
+    secrets:
+      - postgres_password
+    depends_on:
+      - db
+
+  # --- REDIS
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  # --- DJANGO API
+  api:
+    build: ./backend
+    restart: unless-stopped
+    command: gunicorn stocknlp.wsgi:application --bind 0.0.0.0:8000 --workers "${GUNICORN_WORKERS:-3}" --timeout "${GUNICORN_TIMEOUT:-60}"
+    env_file:
+      - ./backend/.env
+    environment:
+      - DJANGO_TRUST_PROXY_HEADERS=true
+      - DJANGO_SSL_REDIRECT=true
+      - DJANGO_SECRET_KEY_FILE=/run/secrets/django_secret_key
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - FINNHUB_APIKEY_FILE=/run/secrets/finnhub_apikey
+      - TWITTER_PASSWORD_FILE=/run/secrets/twitter_password
+      - DJANGO_SUPERUSER_PASSWORD_FILE=/run/secrets/django_superuser_password
+    secrets:
+      - django_secret_key
+      - postgres_password
+      - finnhub_apikey
+      - twitter_password
+      - django_superuser_password
+    depends_on:
+      - db
+      - redis
+      - selenium
+
+  # --- LLM WORKER
+  llm_worker:
+    build: ./backend
+    restart: unless-stopped
+    command: python manage.py run_llm_worker
+    env_file:
+      - ./backend/.env
+    environment:
+      - DJANGO_SECRET_KEY_FILE=/run/secrets/django_secret_key
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+    secrets:
+      - django_secret_key
+      - postgres_password
+    depends_on:
+      - db
+      - redis
+
+  # --- FINNHUB NEWS INGESTOR
+  finnhub_ingestor:
+    build: ./backend
+    restart: unless-stopped
+    command: python manage.py run_finnhub_ingestion
+    env_file:
+      - ./backend/.env
+    environment:
+      - DJANGO_SECRET_KEY_FILE=/run/secrets/django_secret_key
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - FINNHUB_APIKEY_FILE=/run/secrets/finnhub_apikey
+    secrets:
+      - django_secret_key
+      - postgres_password
+      - finnhub_apikey
+    depends_on:
+      - db
+      - redis
+
+  # --- SELENIUM
+  selenium:
+    image: selenium/standalone-chrome:latest
+    restart: unless-stopped
+    shm_size: '2g'
+    env_file:
+      - ./backend/.env
+    environment:
+      SE_VNC_PASSWORD: ${VNC_PASSWORD}
+      SE_VNC_VIEW_ONLY: "true"
+
+  # --- FRONTEND
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    command: sh -c "npm run build && npm run start"
+    environment:
+      - NEXT_PUBLIC_API_URL=https://${DOMAIN_NAME}
+      - NEXT_PUBLIC_NOVNC_URL=https://${DOMAIN_NAME}/vnc/
+      - NEXT_PUBLIC_VNC_PASSWORD=${VNC_PASSWORD}
+      - API_INTERNAL_URL=http://api:8000
+      - MIDDLEWARE_SESSION_SECRET_FILE=/run/secrets/middleware_session_secret
+    secrets:
+      - middleware_session_secret
+    depends_on:
+      - api
+
+  # --- REVERSE PROXY / TLS TERMINATION
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      export NOVNC_BASIC_AUTH_HASH="$$(cat /run/secrets/novnc_basic_auth_hash)" &&
+      exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME}
+      - NOVNC_BASIC_AUTH_USER=${NOVNC_BASIC_AUTH_USER}
+    secrets:
+      - novnc_basic_auth_hash
+    depends_on:
+      - api
+      - frontend
+      - selenium
+
+secrets:
+  django_secret_key:
+    file: ./secrets/django_secret_key.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  finnhub_apikey:
+    file: ./secrets/finnhub_apikey.txt
+  twitter_password:
+    file: ./secrets/twitter_password.txt
+  django_superuser_password:
+    file: ./secrets/django_superuser_password.txt
+  middleware_session_secret:
+    file: ./secrets/middleware_session_secret.txt
+  novnc_basic_auth_hash:
+    file: ./secrets/novnc_basic_auth_hash.txt
+
+volumes:
+  postgres_data:
+  pg_backups:
+  caddy_data:
+  caddy_config:

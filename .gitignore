@@ -126,6 +126,10 @@ celerybeat.pid
 # Environments
 .env
 twitter_cookies.json
+
+# Production secrets (real values) — only *.example templates are tracked
+secrets/*
+!secrets/*.example
 .venv
 env/
 venv/

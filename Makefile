@@ -1,4 +1,5 @@
 COMPOSE = docker compose --env-file ./backend/.env
+COMPOSE_PROD = docker compose -f docker-compose.prod.yaml --env-file ./backend/.env
 
 up:
 	$(COMPOSE) up
@@ -26,3 +27,9 @@ seed:
 	$(COMPOSE) exec api python manage.py loaddata default_tickers default_config
 
 start: rebuild migrate seed
+
+up-prod:
+	$(COMPOSE_PROD) up -d --build
+
+down-prod:
+	$(COMPOSE_PROD) down

@@ -1,0 +1,16 @@
+{$DOMAIN_NAME} {
+    reverse_proxy /api/* api:8000
+    reverse_proxy /admin/* api:8000
+    reverse_proxy /django-rq/* api:8000
+    reverse_proxy /media/* api:8000
+    reverse_proxy /static/* api:8000
+
+    handle_path /vnc/* {
+        basic_auth {
+            {$NOVNC_BASIC_AUTH_USER} {$NOVNC_BASIC_AUTH_HASH}
+        }
+        reverse_proxy selenium:7900
+    }
+
+    reverse_proxy frontend:3000
+}
