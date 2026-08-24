@@ -23,8 +23,7 @@ export default function ConfigTile({ config, onConfigChange }) {
     onConfigChange(newConfig);
   };
 
-  const mode = config.mode || 'crawl';
-  const authRequired = !!config.credentials?.email;
+  const mode = config.mode || 'crawling';
   const source = config.source?.[0]?.name || 'twitter';
   const crawlInterval = config.crawl_interval || 60;
   
@@ -52,11 +51,11 @@ export default function ConfigTile({ config, onConfigChange }) {
         <label className="flex items-center cursor-pointer">
           <input
             type="checkbox"
-            checked={mode === 'crawl'}
+            checked={mode === 'crawling'}
             onChange={(e) => {
-              const newMode = e.target.checked ? 'crawl' : 'scrape';
+              const newMode = e.target.checked ? 'crawling' : 'gathering';
               handleChange('mode', newMode);
-              if (newMode === 'crawl') {
+              if (newMode === 'crawling') {
                   handleChange('twitter_query.start_date', getYesterdayDate());
                   handleChange('twitter_query.end_date', getTodayDate());
               }
@@ -69,12 +68,12 @@ export default function ConfigTile({ config, onConfigChange }) {
 
       {/* Crawl Interval */}
       <label className="block mb-4">
-        {mode === 'crawl' ? 'Crawl Interval (seconds):' : 'Scraping Interval (seconds):'}
+        {mode === 'crawling' ? 'Crawl Interval (seconds):' : 'Scraping Interval (seconds):'}
         <input
           type="number"
           value={crawlInterval}
           onChange={(e) => handleChange('crawl_interval', Number(e.target.value))}
-          placeholder={mode === 'scrape' ? 'Scraping interval' : '60'}
+          placeholder={mode === 'gathering' ? 'Scraping interval' : '60'}
           className="w-full p-2 mt-1 rounded-md bg-gray-800 border border-gray-700"
         />
       </label>
@@ -100,50 +99,6 @@ export default function ConfigTile({ config, onConfigChange }) {
           </select>
         </div>
       </label>
-
-      {/* Auth Required */}
-      <label className="flex items-center cursor-pointer mb-4">
-        <input
-          type="checkbox"
-          checked={authRequired}
-          onChange={(e) => {
-              if (e.target.checked) {
-                  handleChange('credentials', { email: '', login: '', password: '' });
-              } else {
-                  handleChange('credentials', {});
-              }
-          }}
-          className="form-checkbox h-5 w-5 text-blue-500"
-        />
-        <span className="ml-2">Auth Required</span>
-      </label>
-
-      {/* Credentials form only if authRequired = true */}
-      {authRequired && (
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <input
-            type="email"
-            placeholder="Email"
-            className="w-full p-2 rounded-md bg-gray-800 border border-gray-700"
-            value={config.credentials?.email || ''}
-            onChange={(e) => handleChange('credentials.email', e.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="Username"
-            className="w-full p-2 rounded-md bg-gray-800 border border-gray-700"
-            value={config.credentials?.login || ''}
-            onChange={(e) => handleChange('credentials.login', e.target.value)}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            className="col-span-2 w-full p-2 rounded-md bg-gray-800 border border-gray-700"
-            value={config.credentials?.password || ''}
-            onChange={(e) => handleChange('credentials.password', e.target.value)}
-          />
-        </div>
-      )}
 
       {/* Query Configuration */}
       <div className="space-y-4">

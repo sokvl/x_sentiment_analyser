@@ -38,7 +38,6 @@ export const DEFAULT_CONFIG = {
           },
         ],
         threads: 1,
-        credentials: {},
         twitter_query: {
           params: {
             lang: 'en',
@@ -50,7 +49,7 @@ export const DEFAULT_CONFIG = {
         },
         crawl_interval: DEFAULT_CRAWL_INTERVAL,
         max_time_running: null,
-        mode: 'crawl',
+        mode: 'crawling',
       },
     ],
   },
