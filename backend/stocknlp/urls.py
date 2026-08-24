@@ -21,10 +21,12 @@ from django.urls import include
 from django.urls import path
 
 from stocknlp.auth_views import VerifyKeyView
+from stocknlp.health_views import HealthCheckView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('django-rq/', include('django_rq.urls')),
+    path('api/health/', HealthCheckView.as_view(), name='health-check'),
     path('api/auth/verify-key/', VerifyKeyView.as_view(), name='verify-key'),
     path('api/', include('scraper.urls')),
     path('api/tickers/', include('tickers.urls')),
