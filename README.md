@@ -20,7 +20,7 @@ The main goal of the system is to **identify and forecast market sentiment**, he
 - **AI/ML**: PyTorch, NLTK, Hugging Face Transformers  
 - **Frontend**: Next.js  
 
-**Production Ready** – Dockerized with TLS termination (Caddy), scheduled DB backups, structured JSON logging, and CI running the full test suite on every push.  
+Dockerized with TLS termination (Caddy), scheduled DB backups, structured JSON logging, and CI running the full test suite on every push.  
 
 ## Screenshots  
 
