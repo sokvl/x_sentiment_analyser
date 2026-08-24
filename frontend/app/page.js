@@ -27,15 +27,11 @@ export default function Home() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div className="max-h-64 overflow-y-auto">
-                <SignalForecastTile tickers={userConfig.tickers} />
-            </div>
-            <div className="max-h-64 overflow-y-auto">
-                <TickerDataTile styles="" />
-            </div>
+            <SignalForecastTile tickers={userConfig.tickers} />
+            <TickerDataTile styles="" />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ScraperStatusTile
                 status="RUNNING"
                 website="x.com"
@@ -46,12 +42,11 @@ export default function Home() {
             <div className="flex flex-col gap-4">
                 <LiveTweetsFeedTile />
                 <LiveNewsFeedTile />
+                <div className="grid grid-cols-2 gap-4">
+                    <SentimentIndexTwitterTile />
+                    <SentimentIndexNewsTile />
+                </div>
             </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
-            <SentimentIndexTwitterTile />
-            <SentimentIndexNewsTile />
         </div>
         </main>
     );

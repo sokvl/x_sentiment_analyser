@@ -74,7 +74,7 @@ export default function SignalForecastTile({ date = new Date().toISOString().spl
             ) : error ? (
                 <p className="text-red-500">Error: {error}</p>
             ) : signals.length > 0 ? (
-                <div className="overflow-x-auto">
+                <div className="max-h-64 overflow-y-auto overflow-x-auto">
                     <table className="w-full text-sm border-collapse">
                         <thead>
                             <tr className="bg-gray-700 text-gray-300">
