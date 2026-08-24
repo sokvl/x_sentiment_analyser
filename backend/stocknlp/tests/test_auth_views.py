@@ -1,28 +1,29 @@
-from django.test import SimpleTestCase, override_settings
+from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
 from stocknlp.auth_views import VerifyKeyView
+from stocknlp.models import InterviewerKey
 
 factory = APIRequestFactory()
 
 
-@override_settings(INTERVIEWER_ACCESS_KEY='super-secret')
-class VerifyKeyViewTests(SimpleTestCase):
+class VerifyKeyViewTests(TestCase):
     def setUp(self):
         self.view = VerifyKeyView.as_view()
+        _, self.raw_key = InterviewerKey.create_key(label='test')
 
     def test_valid_header_key_returns_200(self):
-        request = factory.get('/api/auth/verify-key/', HTTP_X_ACCESS_KEY='super-secret')
+        request = factory.get('/api/auth/verify-key/', HTTP_X_ACCESS_KEY=self.raw_key)
         response = self.view(request)
         self.assertEqual(response.status_code, 200)
 
     def test_valid_query_param_key_returns_200(self):
-        request = factory.get('/api/auth/verify-key/', {'key': 'super-secret'})
+        request = factory.get('/api/auth/verify-key/', {'key': self.raw_key})
         response = self.view(request)
         self.assertEqual(response.status_code, 200)
 
     def test_wrong_key_returns_403(self):
-        request = factory.get('/api/auth/verify-key/', HTTP_X_ACCESS_KEY='wrong-key')
+        request = factory.get('/api/auth/verify-key/', HTTP_X_ACCESS_KEY='wrong-prefix.wrong-secret')
         response = self.view(request)
         self.assertEqual(response.status_code, 403)
 
@@ -31,8 +32,8 @@ class VerifyKeyViewTests(SimpleTestCase):
         response = self.view(request)
         self.assertEqual(response.status_code, 403)
 
-    @override_settings(INTERVIEWER_ACCESS_KEY='')
-    def test_no_configured_key_returns_403(self):
-        request = factory.get('/api/auth/verify-key/', HTTP_X_ACCESS_KEY='anything')
+    def test_no_keys_configured_returns_403(self):
+        InterviewerKey.objects.all().delete()
+        request = factory.get('/api/auth/verify-key/', HTTP_X_ACCESS_KEY=self.raw_key)
         response = self.view(request)
         self.assertEqual(response.status_code, 403)

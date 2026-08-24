@@ -3,6 +3,8 @@ from __future__ import annotations
 import secrets
 
 from django.conf import settings
+from django.db.models import F
+from django.utils import timezone
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.permissions import BasePermission
 
@@ -14,15 +16,30 @@ class HasInterviewerKey(BasePermission):
         if request.method not in SAFE_METHODS:
             return False
 
-        expected = settings.INTERVIEWER_ACCESS_KEY
-        if not expected:
-            return False
-
         provided = request.headers.get('X-Access-Key') or request.query_params.get('key')
-        if not provided:
+        if not provided or '.' not in provided:
             return False
 
-        return secrets.compare_digest(provided, expected)
+        prefix, _, secret = provided.partition('.')
+
+        from stocknlp.models import InterviewerKey
+
+        try:
+            key = InterviewerKey.objects.get(prefix=prefix)
+        except InterviewerKey.DoesNotExist:
+            return False
+
+        if not key.is_valid():
+            return False
+
+        if not secrets.compare_digest(InterviewerKey.hash_secret(secret), key.hashed_secret):
+            return False
+
+        InterviewerKey.objects.filter(pk=key.pk).update(
+            usage_count=F('usage_count') + 1,
+            last_used_at=timezone.now(),
+        )
+        return True
 
 
 class IsOwner(BasePermission):

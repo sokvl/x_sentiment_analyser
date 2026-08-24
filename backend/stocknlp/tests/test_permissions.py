@@ -1,3 +1,4 @@
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest import mock
 
@@ -6,6 +7,7 @@ from django.test import SimpleTestCase
 from django.test import TestCase
 from django.test import override_settings
 from django.urls import path
+from django.utils import timezone
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.request import Request
@@ -14,6 +16,7 @@ from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
 from rest_framework.views import APIView
 
+from stocknlp.models import InterviewerKey
 from stocknlp.permissions import HasInterviewerKey
 from stocknlp.permissions import IsOwner
 from stocknlp.permissions import IsOwnerOrHasInterviewerKey
@@ -53,18 +56,25 @@ def make_request(method='get', user=anonymous, key=None, in_header=True, **extra
     return request
 
 
-@override_settings(INTERVIEWER_ACCESS_KEY='super-secret')
-class HasInterviewerKeyTests(SimpleTestCase):
+class HasInterviewerKeyTests(TestCase):
+    def setUp(self):
+        _, self.raw_key = InterviewerKey.create_key(label='test')
+
     def test_correct_key_in_header_allows_get(self):
-        request = make_request('get', key='super-secret', in_header=True)
+        request = make_request('get', key=self.raw_key, in_header=True)
         self.assertTrue(HasInterviewerKey().has_permission(request, None))
 
     def test_correct_key_in_query_param_allows_get(self):
-        request = make_request('get', key='super-secret', in_header=False)
+        request = make_request('get', key=self.raw_key, in_header=False)
         self.assertTrue(HasInterviewerKey().has_permission(request, None))
 
     def test_wrong_key_denied(self):
-        request = make_request('get', key='wrong-key', in_header=True)
+        request = make_request('get', key='wrong-prefix.wrong-secret', in_header=True)
+        self.assertFalse(HasInterviewerKey().has_permission(request, None))
+
+    def test_wrong_secret_for_valid_prefix_denied(self):
+        prefix = self.raw_key.split('.')[0]
+        request = make_request('get', key=f'{prefix}.wrong-secret', in_header=True)
         self.assertFalse(HasInterviewerKey().has_permission(request, None))
 
     def test_missing_key_denied(self):
@@ -72,15 +82,29 @@ class HasInterviewerKeyTests(SimpleTestCase):
         self.assertFalse(HasInterviewerKey().has_permission(request, None))
 
     def test_correct_key_on_write_method_denied(self):
-        request = make_request('post', key='super-secret', in_header=True)
+        request = make_request('post', key=self.raw_key, in_header=True)
         self.assertFalse(HasInterviewerKey().has_permission(request, None))
 
-    @override_settings(INTERVIEWER_ACCESS_KEY='')
-    def test_disabled_when_setting_is_empty(self):
-        # Even a request that "matches" an empty expected key must be denied —
-        # unset config means the interviewer path is off, not wide open.
-        request = make_request('get', key='', in_header=True)
+    def test_revoked_key_denied(self):
+        key, raw_key = InterviewerKey.create_key(label='revoked')
+        key.revoked_at = timezone.now()
+        key.save()
+        request = make_request('get', key=raw_key, in_header=True)
         self.assertFalse(HasInterviewerKey().has_permission(request, None))
+
+    def test_expired_key_denied(self):
+        key, raw_key = InterviewerKey.create_key(
+            label='expired', expires_at=timezone.now() - timedelta(days=1),
+        )
+        request = make_request('get', key=raw_key, in_header=True)
+        self.assertFalse(HasInterviewerKey().has_permission(request, None))
+
+    def test_valid_use_increments_usage_count_and_last_used_at(self):
+        request = make_request('get', key=self.raw_key, in_header=True)
+        HasInterviewerKey().has_permission(request, None)
+        key = InterviewerKey.objects.get(prefix=self.raw_key.split('.')[0])
+        self.assertEqual(key.usage_count, 1)
+        self.assertIsNotNone(key.last_used_at)
 
 
 @not_debug
@@ -95,18 +119,20 @@ class IsOwnerTests(SimpleTestCase):
 
 
 @not_debug
-@override_settings(INTERVIEWER_ACCESS_KEY='super-secret')
-class IsOwnerOrHasInterviewerKeyTests(SimpleTestCase):
+class IsOwnerOrHasInterviewerKeyTests(TestCase):
+    def setUp(self):
+        _, self.raw_key = InterviewerKey.create_key(label='test')
+
     def test_owner_allowed_on_write_without_key(self):
         request = make_request('post', user=owner)
         self.assertTrue(IsOwnerOrHasInterviewerKey().has_permission(request, None))
 
     def test_non_owner_with_valid_key_allowed_on_read(self):
-        request = make_request('get', user=anonymous, key='super-secret')
+        request = make_request('get', user=anonymous, key=self.raw_key)
         self.assertTrue(IsOwnerOrHasInterviewerKey().has_permission(request, None))
 
     def test_non_owner_with_valid_key_denied_on_write(self):
-        request = make_request('post', user=anonymous, key='super-secret')
+        request = make_request('post', user=anonymous, key=self.raw_key)
         self.assertFalse(IsOwnerOrHasInterviewerKey().has_permission(request, None))
 
     def test_non_owner_without_key_denied(self):

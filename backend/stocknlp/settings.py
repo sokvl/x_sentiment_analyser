@@ -42,10 +42,6 @@ ALLOWED_HOSTS = (
     else os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 )
 
-# Capability token for read-only interviewer access — see stocknlp.permissions.
-# Unset/empty means the interviewer-key path is disabled outright (deny, not
-# open) rather than accidentally accepting an empty key.
-INTERVIEWER_ACCESS_KEY = os.getenv('INTERVIEWER_ACCESS_KEY', '')
 
 # ---------------------------------------------------------------------------
 # CORS / CSRF

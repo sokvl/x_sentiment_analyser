@@ -7,13 +7,13 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from signals.models import UploadedFile
+from stocknlp.models import InterviewerKey
 
 CSV_CONTENT = b'Date,Ticker,Tweet\n2024-01-01,AAPL,bullish\n2024-01-02,AAPL,bearish\n'
 
 
 @override_settings(
     RAW_DEBUG=False,
-    INTERVIEWER_ACCESS_KEY='test-key',
     MEDIA_ROOT=tempfile.mkdtemp(),
     CACHES={'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}},
 )
@@ -25,7 +25,8 @@ class UploadedFileViewSetTests(TestCase):
         self.owner_client.force_authenticate(user=self.owner)
 
         self.interviewer_client = APIClient()
-        self.interviewer_headers = {'HTTP_X_ACCESS_KEY': 'test-key'}
+        _, raw_key = InterviewerKey.create_key(label='test')
+        self.interviewer_headers = {'HTTP_X_ACCESS_KEY': raw_key}
 
         self.anon_client = APIClient()
 

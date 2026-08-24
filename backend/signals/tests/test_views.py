@@ -7,6 +7,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from django.contrib.auth.models import User
 
 from scraper.models import Content, Post, PostMeta, PostPrediction
+from stocknlp.models import InterviewerKey
 from tickers.models import Ticker
 from signals.models import Signal
 from signals.views.generation import SignalGenerationView
@@ -96,7 +97,7 @@ class SignalGenerationViewTests(TestCase):
         self.assertEqual(call_kwargs.kwargs['used_model'], 'LSTMCNNv1')
 
 
-@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+@override_settings(RAW_DEBUG=False)
 class SignalGenerationViewPermissionTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
@@ -393,12 +394,13 @@ class MarketOptimismIndexViewTests(TestCase):
         self.assertEqual(response.data['error'], 'Market index generation failed')
 
 
-@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+@override_settings(RAW_DEBUG=False)
 class MarketOptimismIndexViewPermissionTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = MarketOptimismIndexView.as_view()
         self.owner = User.objects.create_user(username='owner', password='pw123456')
+        _, self.raw_key = InterviewerKey.create_key(label='test')
 
     def test_anonymous_no_key_denied(self):
         request = self.factory.get('/api/signals/market-index/')
@@ -406,7 +408,7 @@ class MarketOptimismIndexViewPermissionTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_interviewer_key_allowed(self):
-        request = self.factory.get('/api/signals/market-index/', HTTP_X_ACCESS_KEY='test-key')
+        request = self.factory.get('/api/signals/market-index/', HTTP_X_ACCESS_KEY=self.raw_key)
         response = self.view(request)
         self.assertEqual(response.status_code, 200)
 

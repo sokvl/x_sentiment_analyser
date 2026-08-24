@@ -87,15 +87,14 @@ export default function CsvUploadTile() {
                 />
                 <button
                     onClick={() => fileInputRef.current.click()}
-                    disabled={uploading}
-                    className={`bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md ${
-                        uploading ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
+                    disabled
+                    className="bg-gray-600 text-gray-400 px-4 py-2 rounded-md cursor-not-allowed"
                 >
-                    {uploading ? 'Uploading...' : 'Select CSV File'}
+                    Select CSV File
                 </button>
                 <p className="text-sm text-gray-400 mt-2">Supported format: *.csv</p>
                 <p className="text-sm text-gray-400">File must contain colums: Date, Ticker, Tweet</p>
+                <p className="text-sm text-yellow-500 mt-2">Uploading requires owner access — contact the site admin.</p>
             </div>
 
             {Object.keys(results).length > 0 && (

@@ -9,6 +9,7 @@ from rest_framework.test import APIRequestFactory, APIClient, force_authenticate
 from scraper.models import (
     Config, Source, Content, PostMeta, PostPrediction, Post, NewsPost,
 )
+from stocknlp.models import InterviewerKey
 from scraper.views.control import ScraperControlView, ScraperLogsView, ScraperConfigView
 from tickers.models import Ticker
 
@@ -300,13 +301,14 @@ class NewsPostListViewTests(TestCase):
         self.assertEqual(response.data[0]['ticker'], 'AAPL')
 
 
-@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+@override_settings(RAW_DEBUG=False)
 class NewsPostListViewPermissionTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         from scraper.views.news_post import NewsPostListView
         self.view = NewsPostListView.as_view()
         self.owner = User.objects.create_user(username='owner', password='pw123456')
+        _, self.raw_key = InterviewerKey.create_key(label='test')
 
     def test_anonymous_no_key_denied(self):
         request = self.factory.get('/api/news/finnhub/')
@@ -314,7 +316,7 @@ class NewsPostListViewPermissionTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_interviewer_key_allowed(self):
-        request = self.factory.get('/api/news/finnhub/', HTTP_X_ACCESS_KEY='test-key')
+        request = self.factory.get('/api/news/finnhub/', HTTP_X_ACCESS_KEY=self.raw_key)
         response = self.view(request)
         self.assertEqual(response.status_code, 200)
 
@@ -414,13 +416,14 @@ class NewsOptimismIndexViewTests(TestCase):
         self.assertEqual(response.data['error'], 'News index generation failed')
 
 
-@override_settings(RAW_DEBUG=False, INTERVIEWER_ACCESS_KEY='test-key')
+@override_settings(RAW_DEBUG=False)
 class NewsOptimismIndexViewPermissionTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         from scraper.views.news_index import NewsOptimismIndexView
         self.view = NewsOptimismIndexView.as_view()
         self.owner = User.objects.create_user(username='owner', password='pw123456')
+        _, self.raw_key = InterviewerKey.create_key(label='test')
 
     def test_anonymous_no_key_denied(self):
         request = self.factory.get('/api/news/finnhub/index/')
@@ -428,7 +431,7 @@ class NewsOptimismIndexViewPermissionTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_interviewer_key_allowed(self):
-        request = self.factory.get('/api/news/finnhub/index/', HTTP_X_ACCESS_KEY='test-key')
+        request = self.factory.get('/api/news/finnhub/index/', HTTP_X_ACCESS_KEY=self.raw_key)
         response = self.view(request)
         self.assertEqual(response.status_code, 200)
 
