@@ -2,6 +2,7 @@
 
 import React from 'react';
 import CsvUploadTile from '../../components/benchmark/CsvUploadTile';
+import FileRunTile from '../../components/benchmark/FileRunTile';
 import ChartTile from '../../components/benchmark/SentimentAndCandlestickChartTile';
 import ResultsTableTile from '../../components/benchmark/ResultsTableTile';
 import SentimentAndCandlestickChartTile from '../../components/benchmark/SentimentAndCandlestickChartTile';
@@ -14,6 +15,7 @@ export default function Benchmark() {
         <main className="p-8 bg-gray-900 min-h-screen">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <CsvUploadTile />
+                <FileRunTile />
                 <PredictionReportTile />
             </div>
         </main>

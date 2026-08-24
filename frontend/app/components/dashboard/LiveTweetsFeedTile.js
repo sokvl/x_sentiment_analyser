@@ -2,12 +2,10 @@
 import React, { useEffect, useState } from 'react';
 import Tile from '../common/Tile';
 import apiFetch from '../../utils/apiFetch';
+import SentimentTag from './SentimentTag';
 
 const POLL_INTERVAL_MS = 15000;
 const MAX_TWEETS_SHOWN = 6;
-
-const SENTIMENT_LABELS = { 0: 'Negative', 1: 'Neutral', 2: 'Positive' };
-const SENTIMENT_COLORS = { 0: 'text-red-400', 1: 'text-yellow-400', 2: 'text-green-400' };
 
 export default function LiveTweetsFeedTile() {
     const [tweets, setTweets] = useState([]);
@@ -54,20 +52,10 @@ export default function LiveTweetsFeedTile() {
                                     <span className="font-semibold text-blue-400">
                                         {post.related_ticker?.symbol}
                                     </span>
-                                    {post.post_prediction && (
-                                        <span
-                                            className={`font-semibold ${
-                                                SENTIMENT_COLORS[post.post_prediction.prediction] ?? 'text-gray-400'
-                                            }`}
-                                        >
-                                            {SENTIMENT_LABELS[post.post_prediction.prediction] ?? 'Unknown'}
-                                        </span>
-                                    )}
-                                    {post.post_prediction?.probabilities && (
-                                        <span className="text-gray-500">
-                                            [{post.post_prediction.probabilities.map((p) => p.toFixed(2)).join(', ')}]
-                                        </span>
-                                    )}
+                                    <SentimentTag
+                                        prediction={post.post_prediction?.prediction}
+                                        probabilities={post.post_prediction?.probabilities}
+                                    />
                                 </div>
                                 <span>{new Date(post.time_stamp).toLocaleString()}</span>
                             </div>
