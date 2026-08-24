@@ -315,24 +315,27 @@ REST_FRAMEWORK = {
 
 LOG_JSON = _env_bool('DJANGO_LOG_JSON', not DEBUG)
 
+_LOG_FORMATTERS = {
+    'verbose': {
+        'format': '[{asctime}] {levelname} {name}: {message}',
+        'style': '{',
+    },
+}
+if LOG_JSON:
+    _LOG_FORMATTERS['json'] = {
+        '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+        'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+        'rename_fields': {
+            'asctime': 'timestamp',
+            'levelname': 'level',
+            'name': 'logger',
+        },
+    }
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '[{asctime}] {levelname} {name}: {message}',
-            'style': '{',
-        },
-        'json': {
-            '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
-            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
-            'rename_fields': {
-                'asctime': 'timestamp',
-                'levelname': 'level',
-                'name': 'logger',
-            },
-        },
-    },
+    'formatters': _LOG_FORMATTERS,
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
