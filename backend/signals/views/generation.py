@@ -12,11 +12,24 @@ class SignalGenerationView(APIView):
     Matches the logic provided in the user's snippet (2-day window).
     """
     permission_classes = [IsOwner]
+    throttle_scope = 'signal_generation'
 
     def get(self, request):
-        start_date_str = request.query_params.get('start_date')
-        end_date_str = request.query_params.get('end_date')
-        date_str = request.query_params.get('date')
+        """Read-only preview: never persists Signal rows, regardless of params."""
+        return self._generate(request, with_save=False)
+
+    def post(self, request):
+        """Generates signals and, when requested, persists them as Signal rows."""
+        with_save = request.data.get('with_save', request.query_params.get('with_save', 'false'))
+        with_save = str(with_save).lower() == 'true'
+        return self._generate(request, with_save=with_save)
+
+    def _generate(self, request, with_save: bool):
+        params = request.data if request.method == 'POST' else request.query_params
+
+        start_date_str = params.get('start_date')
+        end_date_str = params.get('end_date')
+        date_str = params.get('date')
 
         if start_date_str and end_date_str:
             start_date = parse_date(start_date_str)
@@ -31,13 +44,12 @@ class SignalGenerationView(APIView):
         else:
             return Response({'error': 'Provide start_date & end_date, or date.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        tickers_param = request.query_params.get('tickers', 'all')
-        used_model = request.query_params.get('used_model', 'LSTMCNNv1')
+        tickers_param = params.get('tickers', 'all')
+        used_model = params.get('used_model', 'LSTMCNNv1')
         try:
-            config_id = int(request.query_params.get('config_id', 1))
+            config_id = int(params.get('config_id', 1))
         except (ValueError, TypeError):
             return Response({'error': 'config_id must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
-        with_save = request.query_params.get('with_save', 'false').lower() == 'true'
 
         service = SignalService()
         try:

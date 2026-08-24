@@ -98,6 +98,49 @@ class SignalGenerationViewTests(TestCase):
 
 
 @override_settings(RAW_DEBUG=False)
+class SignalGenerationViewWriteSemanticsTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.view = SignalGenerationView.as_view()
+        self.owner = User.objects.create_user(username='owner', password='pw')
+
+    @patch('signals.views.generation.SignalService')
+    def test_get_never_persists_even_with_save_true(self, mock_service_cls):
+        mock_service = mock_service_cls.return_value
+        mock_service.resolve_tickers.return_value = [MagicMock(symbol='AAPL')]
+        mock_service.generate_for_tickers.return_value = {'AAPL': {}}
+
+        request = self.factory.get(
+            '/api/signals/generate/', {'date': '2024-01-15', 'with_save': 'true'},
+        )
+        force_authenticate(request, user=self.owner)
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            mock_service.generate_for_tickers.call_args.kwargs['with_save'], False,
+        )
+
+    @patch('signals.views.generation.SignalService')
+    def test_post_with_save_true_persists(self, mock_service_cls):
+        mock_service = mock_service_cls.return_value
+        mock_service.resolve_tickers.return_value = [MagicMock(symbol='AAPL')]
+        mock_service.generate_for_tickers.return_value = {'AAPL': {}}
+
+        request = self.factory.post(
+            '/api/signals/generate/',
+            {'date': '2024-01-15', 'with_save': 'true'},
+        )
+        force_authenticate(request, user=self.owner)
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            mock_service.generate_for_tickers.call_args.kwargs['with_save'], True,
+        )
+
+
+@override_settings(RAW_DEBUG=False)
 class SignalGenerationViewPermissionTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
