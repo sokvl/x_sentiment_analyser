@@ -4,6 +4,7 @@ from .views import (
     AvailableModelsView,
     ConfigViewSet,
     EvalView,
+    NewsOptimismIndexView,
     NewsPostListView,
     PostViewSet,
     PredictionsByDayView,
@@ -33,6 +34,7 @@ urlpatterns = [
     path("predictions-by-day/", PredictionsByDayView.as_view(), name="predictions-by-day"),
     path("models/", AvailableModelsView.as_view(), name="available-models"),
     path("news/finnhub/", NewsPostListView.as_view(), name="finnhub-news-list"),
+    path("news/finnhub/index/", NewsOptimismIndexView.as_view(), name="finnhub-news-index"),
 
     # ViewSets
     path("", include(router.urls)),
