@@ -42,7 +42,7 @@ class ScraperLogsView(APIView):
             return Response(service.logs(source_name))
         except ValueError:
             return Response({
-                "state": "unknown",
+                "state": "IDLE",
                 "logs": [],
                 "current_task": {},
                 "message": "Scraper is not running"
