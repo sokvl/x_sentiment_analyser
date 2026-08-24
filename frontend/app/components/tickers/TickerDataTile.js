@@ -45,7 +45,13 @@ export default function ProcessedTickerDataTile({ styles }) {
         setError(null);
         try {
             const tickerQuery = tickers.map((t) => `${t}`).join(',');
-            const response = await apiFetch(`/api/tickers/stock-data/?tickers=${tickerQuery}`);
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 7);
+            const toDateParam = (d) => d.toISOString().split('T')[0];
+            const response = await apiFetch(
+                `/api/tickers/stock-data/?tickers=${tickerQuery}&start_date=${toDateParam(startDate)}&end_date=${toDateParam(endDate)}`,
+            );
 
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
